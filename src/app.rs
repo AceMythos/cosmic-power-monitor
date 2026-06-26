@@ -157,12 +157,7 @@ impl cosmic::Application for PowerMonitor {
                 .into();
         }
 
-        let content = row![
-            icon::from_name("battery-symbolic").size(16),
-            text::body(display),
-        ]
-        .spacing(4)
-        .align_y(cosmic::iced::core::Alignment::Center);
+        let content = text::body(display);
 
         let btn = button::custom(content)
             .on_press_down(Message::TogglePopup)

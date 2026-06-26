@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Cosmic Power Monitor
+Comment=Display real-time battery power draw in watts
+Type=Application
+Exec=cosmic-power-monitor
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Power;Battery;Watts;
+Icon=battery-symbolic
+StartupNotify=true
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=End
+X-OverflowPriority=10

@@ -1,0 +1,23 @@
+[package]
+name = "cosmic-power-monitor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic"
+default-features = false
+features = ["applet", "tokio", "wayland"]
+
+[dependencies.zbus]
+version = "5"
+default-features = false
+features = ["tokio"]
+
+[dependencies.tokio]
+version = "1"
+features = ["rt", "time"]
+
+[dependencies.futures-util]
+version = "0.3"

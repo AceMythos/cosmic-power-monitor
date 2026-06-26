@@ -16,7 +16,7 @@ The applet displays the battery power rate reported by the kernel power-supply i
 
 **Limitations:**
 
-- Measures **battery charge/discharge rate**, not total laptop power draw
+- Shows **battery charge/discharge power**, not total laptop power draw
 - Values come from the battery firmware/driver, not an external watt meter
 - Updates about every 250 ms, so readings can still fluctuate between samples
 - The label is hidden when no rate is available (e.g. fully charged, `0 W`)

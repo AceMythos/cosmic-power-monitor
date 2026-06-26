@@ -88,7 +88,14 @@ impl cosmic::Application for PowerMonitor {
             core,
             ..Default::default()
         };
-        (app, Task::none())
+        (
+            app,
+            Task::perform(battery::poll_battery(), |result| match result {
+                Ok(data) => Message::Update(data),
+                Err(_) => Message::NoBattery,
+            })
+            .map(Action::App),
+        )
     }
 
     fn on_close_requested(&self, id: cosmic::iced::window::Id) -> Option<Message> {
@@ -273,11 +280,12 @@ impl cosmic::Application for PowerMonitor {
                 futures_util::stream::unfold(
                     (),
                     |_| async move {
-                        tokio::time::sleep(Duration::from_secs(3)).await;
-                        match battery::poll_battery().await {
+                        let message = match battery::poll_battery().await {
                             Ok(data) => Some((Message::Update(data), ())),
                             Err(_) => Some((Message::NoBattery, ())),
-                        }
+                        };
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        message
                     },
                 )
             },

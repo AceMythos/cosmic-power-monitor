@@ -1,6 +1,6 @@
 # Cosmic Power Monitor
 
-A COSMIC desktop applet that displays real-time battery power draw (watts) in the panel.
+A COSMIC desktop applet that displays real-time battery charge/discharge power (watts) in the panel.
 
 ## Features
 
@@ -12,7 +12,7 @@ A COSMIC desktop applet that displays real-time battery power draw (watts) in th
 
 The applet displays the battery power rate reported by the kernel power-supply interface, usually `power_now` in `/sys/class/power_supply/BAT0/`. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
-**Good for:** seeing whether you're drawing more or less power, comparing idle vs load, and watching charge rate.
+**Good for:** comparing battery power use between idle and load, and watching charge rate.
 
 **Limitations:**
 

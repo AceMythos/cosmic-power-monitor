@@ -1,0 +1,27 @@
+{
+  "opencode.json": {
+    "mtime": 1782463350.1445138,
+    "ast_hash": "c17b86089938b443ff944565f2daf64d",
+    "semantic_hash": "c17b86089938b443ff944565f2daf64d"
+  },
+  "setup.sh": {
+    "mtime": 1782465946.3946493,
+    "ast_hash": "24836e79a56c25192b9865554ab184d0",
+    "semantic_hash": "24836e79a56c25192b9865554ab184d0"
+  },
+  "src/app.rs": {
+    "mtime": 1782468248.886443,
+    "ast_hash": "f68c4970364a0a911236c78a2ce2eb5f",
+    "semantic_hash": "f68c4970364a0a911236c78a2ce2eb5f"
+  },
+  "src/battery.rs": {
+    "mtime": 1782467718.5784342,
+    "ast_hash": "5fa0d134ca33443838eb9009a4b07142",
+    "semantic_hash": "5fa0d134ca33443838eb9009a4b07142"
+  },
+  "src/main.rs": {
+    "mtime": 1782467413.2018785,
+    "ast_hash": "3e57a443eeb289a3a4f803ee9aec8ca0",
+    "semantic_hash": "3e57a443eeb289a3a4f803ee9aec8ca0"
+  }
+}

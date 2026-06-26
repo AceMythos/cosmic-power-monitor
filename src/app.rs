@@ -147,17 +147,7 @@ impl cosmic::Application for PowerMonitor {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let display = self.watts_display();
-        if display.is_empty() {
-            return self
-                .core
-                .applet
-                .icon_button("battery-symbolic")
-                .on_press(Message::TogglePopup)
-                .into();
-        }
-
-        let content = text::body(display);
+        let content = text::body(self.watts_display());
 
         let btn = button::custom(content)
             .on_press_down(Message::TogglePopup)

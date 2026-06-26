@@ -146,7 +146,7 @@ impl cosmic::Application for PowerMonitor {
         Task::none()
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<'_, Self::Message> {
         let display = self.watts_display();
         if display.is_empty() {
             return self
@@ -171,7 +171,7 @@ impl cosmic::Application for PowerMonitor {
         self.core.applet.autosize_window(btn).into()
     }
 
-    fn view_window(&self, _id: Id) -> Element<Self::Message> {
+    fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
         let mut content: Vec<Element<Message>> = Vec::new();
 
         if self.no_battery {

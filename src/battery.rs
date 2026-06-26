@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
 
 #[derive(Debug, Clone, Default)]
 pub struct BatteryData {
@@ -12,78 +15,27 @@ pub struct BatteryData {
 }
 
 pub async fn poll_battery() -> Result<BatteryData, String> {
-    let connection = zbus::Connection::system()
-        .await
-        .map_err(|e| e.to_string())?;
+    let battery_path = battery_path()?;
 
-    let result = connection
-        .call_method(
-            Some("org.freedesktop.UPower"),
-            "/org/freedesktop/UPower",
-            Some("org.freedesktop.UPower"),
-            "GetDisplayDevice",
-            &(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let status = read_trimmed(&battery_path, "status")?;
+    let percentage = read_f64(&battery_path, "capacity")
+        .or_else(|_| {
+            let energy = read_f64(&battery_path, "energy_now")?;
+            let energy_full = read_f64(&battery_path, "energy_full")?;
+            if energy_full <= 0.0 {
+                return Err("energy_full is zero".to_string());
+            }
 
-    let device_path: zbus::zvariant::OwnedObjectPath = result
-        .body()
-        .deserialize()
-        .map_err(|e| format!("parse error: {}", e))?;
+            Ok((energy / energy_full) * 100.0)
+        })?;
 
-    let device_result = connection
-        .call_method(
-            Some("org.freedesktop.UPower"),
-            device_path.as_ref(),
-            Some("org.freedesktop.DBus.Properties"),
-            "GetAll",
-            &("org.freedesktop.UPower.Device"),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let energy = read_energy_wh(&battery_path, "energy_now")
+        .or_else(|_| read_charge_as_energy_wh(&battery_path, "charge_now"))?;
+    let energy_full = read_energy_wh(&battery_path, "energy_full")
+        .or_else(|_| read_charge_as_energy_wh(&battery_path, "charge_full"))?;
+    let energy_rate = read_power_watts(&battery_path)?;
 
-    let props: HashMap<String, zbus::zvariant::OwnedValue> = device_result
-        .body()
-        .deserialize()
-        .map_err(|e| format!("parse error: {}", e))?;
-
-    fn get_f64(props: &HashMap<String, zbus::zvariant::OwnedValue>, key: &str) -> f64 {
-        props.get(key)
-            .and_then(|v| v.downcast_ref::<f64>().ok())
-            .unwrap_or(0.0)
-    }
-
-    fn get_u32(props: &HashMap<String, zbus::zvariant::OwnedValue>, key: &str) -> u32 {
-        props.get(key)
-            .and_then(|v| v.downcast_ref::<u32>().ok())
-            .unwrap_or(0)
-    }
-
-    fn get_i64(props: &HashMap<String, zbus::zvariant::OwnedValue>, key: &str) -> i64 {
-        props.get(key)
-            .and_then(|v| v.downcast_ref::<i64>().ok())
-            .unwrap_or(0)
-    }
-
-    let energy_rate = get_f64(&props, "EnergyRate");
-    let energy = get_f64(&props, "Energy");
-    let energy_full = get_f64(&props, "EnergyFull");
-    let percentage = get_f64(&props, "Percentage");
-    let state = get_u32(&props, "State");
-    let time_to_empty = get_i64(&props, "TimeToEmpty");
-    let time_to_full = get_i64(&props, "TimeToFull");
-
-    let status = match state {
-        1 => "Charging",
-        2 => "Discharging",
-        3 => "Empty",
-        4 => "Fully Charged",
-        5 => "Pending Charge",
-        6 => "Pending Discharge",
-        _ => "Unknown",
-    }
-    .to_string();
+    let (time_to_empty, time_to_full) = estimate_times(&status, energy, energy_full, energy_rate);
 
     Ok(BatteryData {
         energy_rate,
@@ -94,4 +46,68 @@ pub async fn poll_battery() -> Result<BatteryData, String> {
         energy,
         energy_full,
     })
+}
+
+fn battery_path() -> Result<PathBuf, String> {
+    let entries = fs::read_dir(POWER_SUPPLY_DIR).map_err(|e| e.to_string())?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let battery_type = read_trimmed(&path, "type").unwrap_or_default();
+        if battery_type == "Battery" {
+            return Ok(path);
+        }
+    }
+
+    Err("No battery detected".to_string())
+}
+
+fn estimate_times(status: &str, energy: f64, energy_full: f64, energy_rate: f64) -> (i64, i64) {
+    if energy_rate <= 0.0 {
+        return (0, 0);
+    }
+
+    match status {
+        "Discharging" => (((energy / energy_rate) * 3600.0) as i64, 0),
+        "Charging" => (0, (((energy_full - energy).max(0.0) / energy_rate) * 3600.0) as i64),
+        _ => (0, 0),
+    }
+}
+
+fn read_trimmed(base: &Path, file: &str) -> Result<String, String> {
+    let path = base.join(file);
+    let value = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    Ok(value.trim().to_string())
+}
+
+fn read_f64(base: &Path, file: &str) -> Result<f64, String> {
+    read_trimmed(base, file)?
+        .parse::<f64>()
+        .map_err(|e| format!("{}: {}", base.join(file).display(), e))
+}
+
+fn read_energy_wh(base: &Path, file: &str) -> Result<f64, String> {
+    Ok(read_f64(base, file)? / 1_000_000.0)
+}
+
+fn read_charge_as_energy_wh(base: &Path, file: &str) -> Result<f64, String> {
+    let charge_ua_h = read_f64(base, file)?;
+    let voltage_uv = read_f64(base, "voltage_now")?;
+
+    Ok((charge_ua_h * voltage_uv) / 1_000_000_000_000.0)
+}
+
+fn read_power_watts(base: &Path) -> Result<f64, String> {
+    if let Ok(power_uw) = read_f64(base, "power_now") {
+        return Ok(power_uw / 1_000_000.0);
+    }
+
+    let current_ua = read_f64(base, "current_now")?;
+    let voltage_uv = read_f64(base, "voltage_now")?;
+    Ok((current_ua * voltage_uv) / 1_000_000_000_000.0)
 }

@@ -50,7 +50,12 @@ impl PowerMonitor {
             return String::new();
         }
         let sign = if self.status == "Charging" { "+" } else { "-" };
-        format!("{}{}", sign, Self::format_watts(self.watts))
+        let time = match self.status.as_str() {
+            "Charging" if self.time_to_full > 0 => format!("({})", Self::format_time(self.time_to_full)),
+            "Discharging" if self.time_to_empty > 0 => format!("({})", Self::format_time(self.time_to_empty)),
+            _ => String::new(),
+        };
+        format!("{}{}{}", sign, Self::format_watts(self.watts), time)
     }
 
     fn format_time(seconds: i64) -> String {

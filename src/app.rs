@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use crate::battery;
 
-const ID: &str = "com.acemythos.CosmicPowerMonitor";
+const ID: &str = "io.github.AceMythos.cosmic-ext-applet-power-monitor";
 
 #[derive(Default)]
 pub struct PowerMonitor {

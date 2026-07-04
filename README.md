@@ -1,6 +1,6 @@
-# Cosmic Power Monitor
+# Power Monitor for the COSMIC™ Desktop
 
-A COSMIC desktop applet that displays real-time battery charge/discharge power (watts) in the panel.
+A lightweight applet for the COSMIC™ desktop that displays real-time battery charge/discharge power (watts) in the panel.
 
 ## Features
 
@@ -34,7 +34,7 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-Then add **Cosmic Power Monitor** to your panel:
+Then add **Power Monitor for the COSMIC™ Desktop** to your panel:
 **COSMIC Settings → Desktop → Panel → Add applet**
 
 ## Manual Build
@@ -49,7 +49,7 @@ cargo build --release
 
 # Install
 sudo cp target/release/cosmic-power-monitor /usr/local/bin/
-sudo cp resources/com.acemythos.CosmicPowerMonitor.desktop /usr/share/applications/
+sudo cp resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop /usr/share/applications/
 ```
 
 ## Uninstall

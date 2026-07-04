@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.AceMythos.CosmicPowerMonitor</id>
+  <id>io.github.AceMythos.cosmic-ext-applet-power-monitor</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
-  <name>Cosmic Power Monitor</name>
-  <summary>Display real-time battery power draw in watts</summary>
+  <name>Power Monitor for the COSMIC™ Desktop</name>
+  <summary>Display real-time battery power draw in watts for the COSMIC™ desktop</summary>
   <description>
     <p>
-      A lightweight COSMIC applet that shows real-time battery power consumption
-      directly in the panel. Monitor your power usage at a glance with live
-      wattage readings updated every second.
+      A lightweight applet for the COSMIC™ desktop that shows real-time battery
+      power consumption directly in the panel. Monitor your power usage at a
+      glance with live wattage readings updated every second.
     </p>
     <p>Features:</p>
     <ul>
@@ -24,7 +24,10 @@
   <developer id="io.github.AceMythos">
     <name>AceMythos</name>
   </developer>
-  <launchable type="desktop-id">io.github.AceMythos.CosmicPowerMonitor.desktop</launchable>
+  <launchable type="desktop-id">io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop</launchable>
+  <provides>
+    <id>com.system76.CosmicApplet</id>
+  </provides>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.1.1" date="2025-07-04">

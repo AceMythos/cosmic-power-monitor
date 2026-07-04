@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Cosmic Power Monitor
+Name=Power Monitor for the COSMIC™ Desktop
 Comment=Display real-time battery power draw in watts
 Type=Application
 Exec=cosmic-power-monitor

@@ -2,6 +2,10 @@
 
 A lightweight applet for the COSMIC™ desktop that displays real-time battery charge/discharge power (watts) in the panel.
 
+## Screenshot
+
+![demo](screenshots/demo.png)
+
 ## Features
 
 - Panel shows **text only** — e.g. `-12.7W` when discharging, `+26.5W` when charging (no battery icon)

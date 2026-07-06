@@ -4,9 +4,9 @@ A lightweight applet for the COSMIC™ desktop that displays real-time battery c
 
 ## Screenshots
 
-| Panel | Popup |
-|-------|-------|
-| ![Panel](screenshots/demo.png) | ![Popup](screenshots/popup.png) |
+| Charging | Discharging |
+|----------|-------------|
+| ![Charging](screenshots/demo.png) | ![Discharging](screenshots/popup.png) |
 
 ## Features
 

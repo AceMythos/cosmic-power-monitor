@@ -29,8 +29,11 @@
     <id>com.system76.CosmicApplet</id>
   </provides>
   <content_rating type="oars-1.1" />
+  <categories>
+    <category>Utility</category>
+  </categories>
   <releases>
-    <release version="0.1.3" date="2026-07-14">
+    <release version="0.1.4" date="2026-07-14">
       <description>
         <p>Add a packaged app icon for Flatpak AppStream metadata and store visibility.</p>
       </description>

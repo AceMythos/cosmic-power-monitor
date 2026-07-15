@@ -7,18 +7,29 @@
   <summary>Display real-time battery power draw in watts for the COSMIC™ desktop</summary>
   <description>
     <p>
-      A lightweight applet for the COSMIC™ desktop that shows real-time battery
-      power consumption directly in the panel. Monitor your power usage at a
-      glance with live wattage readings updated every second.
+      Shows your laptop's battery draw in watts right on the COSMIC panel. Reads
+      from /sys/class/power_supply directly — no daemon, no extra overhead.
+      Updates about 4 times a second.
     </p>
-    <p>Features:</p>
+    <p>Click the reading for the full picture:</p>
     <ul>
-      <li>Real-time power draw display in watts</li>
-      <li>Updates every second via D-Bus</li>
-      <li>Lightweight and minimal resource usage</li>
-      <li>Integrates seamlessly into the COSMIC panel</li>
+      <li>Current charge percentage</li>
+      <li>Charging or discharging status</li>
+      <li>Charge/discharge rate in watts</li>
+      <li>Total energy capacity and current level</li>
+      <li>Estimated time remaining</li>
     </ul>
   </description>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/demo.png</image>
+      <caption>Power draw showing on the panel</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/popup.png</image>
+      <caption>Detailed battery info popup</caption>
+    </screenshot>
+  </screenshots>
   <url type="homepage">https://github.com/AceMythos/cosmic-power-monitor</url>
   <url type="bugtracker">https://github.com/AceMythos/cosmic-power-monitor/issues</url>
   <developer id="io.github.AceMythos">
@@ -33,6 +44,11 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.1.5" date="2026-07-15">
+      <description>
+        <p>Use currentColor in icon for dark/light theme support. Rewrite store description. Add screenshots to store listing.</p>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-07-14">
       <description>
         <p>Add a packaged app icon for Flatpak AppStream metadata and store visibility.</p>

@@ -6,7 +6,7 @@ A lightweight applet for the COSMIC™ desktop that displays real-time battery c
 
 | Charging | Discharging |
 |----------|-------------|
-| ![Charging](screenshots/demo.png) | ![Discharging](screenshots/popup.png) |
+| ![Charging](screenshots/demo.png?v=2) | ![Discharging](screenshots/popup.png?v=2) |
 
 ## Features
 

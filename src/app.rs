@@ -1,20 +1,23 @@
 use cosmic::app::Core;
+use cosmic::iced::core::animation::{Animation, Easing};
+use cosmic::iced::mouse;
 use cosmic::iced::platform_specific::shell::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
-use cosmic::iced::{Limits, Subscription};
-use cosmic::widget::{button, column, container, divider, icon, row, text};
-use cosmic::{Action, Element, Task};
-use std::time::Duration;
+use cosmic::iced::{Length, Limits, Subscription};
+use cosmic::widget::{button, canvas, column, container, divider, icon, row, text};
+use cosmic::{Action, Element, Task, Theme};
+use cosmic::iced::Color;
+use std::time::{Duration, Instant};
 
 use crate::battery;
 
 const ID: &str = "io.github.AceMythos.cosmic-ext-applet-power-monitor";
 
-#[derive(Default)]
 pub struct PowerMonitor {
     core: Core,
     popup: Option<Id>,
     watts: f64,
+    display_watts: Animation<f32>,
     percentage: f64,
     status: String,
     time_to_empty: i64,
@@ -22,6 +25,26 @@ pub struct PowerMonitor {
     energy: f64,
     energy_full: f64,
     no_battery: bool,
+}
+
+impl Default for PowerMonitor {
+    fn default() -> Self {
+        Self {
+            core: Core::default(),
+            popup: None,
+            watts: 0.0,
+            display_watts: Animation::new(0.0)
+                .duration(Duration::from_millis(200))
+                .easing(Easing::EaseOutCubic),
+            percentage: 0.0,
+            status: String::new(),
+            time_to_empty: 0,
+            time_to_full: 0,
+            energy: 0.0,
+            energy_full: 0.0,
+            no_battery: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -45,8 +68,8 @@ impl PowerMonitor {
         }
     }
 
-    fn watts_display(&self) -> String {
-        if self.no_battery || self.watts <= 0.0 {
+    fn format_power_string(&self, watts: f64) -> String {
+        if self.no_battery || watts <= 0.0 {
             return String::new();
         }
         let sign = if self.status == "Charging" { "+" } else { "-" };
@@ -55,7 +78,7 @@ impl PowerMonitor {
             "Discharging" if self.time_to_empty > 0 => format!("({})", Self::format_time(self.time_to_empty)),
             _ => String::new(),
         };
-        format!("{}{}{}", sign, Self::format_watts(self.watts), time)
+        format!("{}{}{}", sign, Self::format_watts(watts), time)
     }
 
     fn format_time(seconds: i64) -> String {
@@ -71,6 +94,54 @@ impl PowerMonitor {
         } else {
             format!("{}s", seconds)
         }
+    }
+}
+
+struct BatteryBar {
+    percentage: f32,
+}
+
+impl canvas::Program<Message, cosmic::Theme> for BatteryBar {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::iced::Renderer,
+        _theme: &Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        let width = bounds.width;
+        let height = bounds.height;
+        let fill_width = width * self.percentage;
+
+        let track_color = Color::from_rgba(0.5, 0.5, 0.5, 0.15);
+        frame.fill_rectangle(
+            cosmic::iced::Point::new(0.0, 0.0),
+            cosmic::iced::Size::new(width, height),
+            track_color,
+        );
+
+        let fill_color = if self.percentage > 0.6 {
+            Color::from_rgb(0.3, 0.8, 0.3)
+        } else if self.percentage > 0.2 {
+            Color::from_rgb(0.9, 0.6, 0.1)
+        } else {
+            Color::from_rgb(0.8, 0.2, 0.2)
+        };
+
+        if fill_width > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::new(0.0, 0.0),
+                cosmic::iced::Size::new(fill_width, height),
+                fill_color,
+            );
+        }
+
+        vec![frame.into_geometry()]
     }
 }
 
@@ -140,6 +211,7 @@ impl cosmic::Application for PowerMonitor {
             }
             Message::Update(data) => {
                 self.watts = data.energy_rate;
+                self.display_watts.go_mut(data.energy_rate as f32, Instant::now());
                 self.percentage = data.percentage;
                 self.status = data.status;
                 self.time_to_empty = data.time_to_empty;
@@ -159,7 +231,8 @@ impl cosmic::Application for PowerMonitor {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let content = text::body(self.watts_display());
+        let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
+        let content = text::body(self.format_power_string(animated));
 
         let btn = button::custom(content)
             .on_press_down(Message::TogglePopup)
@@ -190,15 +263,27 @@ impl cosmic::Application for PowerMonitor {
                 row![
                     icon::from_name(status_icon).size(32),
                     column![
-                        text::title3(format!("{:.0}%", self.percentage)),
+                        text::title1(format!("{:.0}%", self.percentage)),
                         text::caption(&self.status),
                     ]
-                    .spacing(2),
+                    .spacing(0),
                 ]
                 .spacing(12)
                 .align_y(cosmic::iced::core::Alignment::Center),
             )
-            .padding(12)
+            .padding([12, 12, 4, 12])
+            .into(),
+        );
+
+        content.push(
+            container(
+                canvas::Canvas::<BatteryBar, Message, Theme>::new(BatteryBar {
+                    percentage: (self.percentage / 100.0) as f32,
+                })
+                .width(Length::Fill)
+                .height(Length::Fixed(4.0)),
+            )
+            .padding([4, 12, 12, 12])
             .into(),
         );
 

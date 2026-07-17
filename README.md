@@ -32,8 +32,21 @@ flatpak install --user cosmic io.github.AceMythos.cosmic-ext-applet-power-monito
 ### Build from source
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+# Install system deps
+sudo apt install libxkbcommon-dev libfontconfig-dev libfreetype-dev libexpat1-dev cmake pkgconf
+
+# Build
+. "$HOME/.cargo/env"
+cargo build --release
+
+# Install
+sudo install -Dm0755 target/release/cosmic-power-monitor /usr/local/bin/cosmic-power-monitor
+sudo install -Dm0644 resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop \
+    /usr/share/applications/
+sudo install -Dm0644 resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.svg \
+    /usr/share/icons/hicolor/scalable/apps/
+sudo install -Dm0644 resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.metainfo.xml \
+    /usr/share/metainfo/
 ```
 
 Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel -> Add applet.

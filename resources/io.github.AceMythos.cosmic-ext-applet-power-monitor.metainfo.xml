@@ -20,14 +20,19 @@
       <li>Estimated time remaining</li>
     </ul>
   </description>
+  <icon type="stock">io.github.AceMythos.cosmic-ext-applet-power-monitor.svg</icon>
+  <branding>
+    <color type="primary" scheme_preference="light">#E8EDF4</color>
+    <color type="primary" scheme_preference="dark">#0F172A</color>
+  </branding>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/demo.png</image>
-      <caption>Power draw showing on the panel</caption>
+      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/charge.png</image>
+      <caption>Power draw showing on the panel while charging</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/popup.png</image>
-      <caption>Detailed battery info popup</caption>
+      <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/discharge.png</image>
+      <caption>Power draw showing on the panel while discharging</caption>
     </screenshot>
   </screenshots>
   <url type="homepage">https://github.com/AceMythos/cosmic-power-monitor</url>
@@ -38,18 +43,27 @@
   <launchable type="desktop-id">io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop</launchable>
   <provides>
     <id>com.system76.CosmicApplet</id>
+    <binary>cosmic-power-monitor</binary>
   </provides>
   <content_rating type="oars-1.1" />
   <categories>
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.1.6" date="2026-07-17">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.6</url>
+      <description>
+        <p>New full-color app icon for COSMIC Store visibility. New charging/discharging screenshots. Smooth power animation and battery bar popup.</p>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-07-15">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.5</url>
       <description>
         <p>Use currentColor in icon for dark/light theme support. Rewrite store description. Add screenshots to store listing.</p>
       </description>
     </release>
     <release version="0.1.4" date="2026-07-14">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.4</url>
       <description>
         <p>Add a packaged app icon for Flatpak AppStream metadata and store visibility.</p>
       </description>

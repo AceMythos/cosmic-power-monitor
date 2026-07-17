@@ -1,7 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect x="20" y="36" width="80" height="56" rx="8" ry="8" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-  <rect x="100" y="50" width="10" height="28" rx="3" ry="3" fill="currentColor"/>
-  <rect x="30" y="46" width="20" height="36" rx="3" ry="3" fill="currentColor" opacity="0.2"/>
-  <rect x="55" y="46" width="20" height="36" rx="3" ry="3" fill="currentColor" opacity="0.4"/>
-  <rect x="80" y="46" width="10" height="36" rx="3" ry="3" fill="currentColor" opacity="0.6"/>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#243B63"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="batteryGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2EA7FF"/>
+      <stop offset="55%" stop-color="#29D3FF"/>
+      <stop offset="100%" stop-color="#4CD964"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFD54A"/>
+      <stop offset="55%" stop-color="#FFC107"/>
+      <stop offset="100%" stop-color="#FF9800"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#4CD964" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#4CD964" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)" />
+  <circle cx="64" cy="64" r="38" fill="url(#glow)" />
+  <rect x="24" y="42" width="72" height="44" rx="8" fill="none" stroke="#E8EDF4" stroke-width="5" />
+  <rect x="96" y="53" width="9" height="22" rx="3" fill="#E8EDF4" />
+  <rect x="31" y="49" width="16" height="30" rx="3" fill="#2EA7FF" />
+  <rect x="50" y="49" width="16" height="30" rx="3" fill="#29D3FF" />
+  <rect x="69" y="49" width="16" height="30" rx="3" fill="#4CD964" />
+  <path d="M68 20 L48 60 H60 L52 108 L86 58 H72 L82 20 Z" fill="url(#bolt)" stroke="#C56A00" stroke-width="1.5" stroke-linejoin="round" />
 </svg>

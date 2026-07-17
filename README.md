@@ -1,6 +1,12 @@
-# Power Monitor for the COSMIC™ Desktop
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Version](https://img.shields.io/badge/version-0.1.1-blue)
+![Rust](https://img.shields.io/badge/rust-1.70+-orange)
 
-A lightweight applet for the COSMIC™ desktop that displays real-time battery charge/discharge power (watts) in the panel.
+# Power Monitor for the COSMIC Desktop
+
+See your battery watts in the panel. Charge rate, discharge rate, time remaining at a glance.
+
+If this saves you guesswork, star the repo.
 
 ## Screenshots
 
@@ -8,61 +14,40 @@ A lightweight applet for the COSMIC™ desktop that displays real-time battery c
 |----------|-------------|
 | ![Charging](screenshots/charge.png) | ![Discharging](screenshots/discharge.png) |
 
-## Features
+## What it does
 
-- Panel shows **text only** — e.g. `-12.7W` when discharging, `+26.5W` when charging (no battery icon)
-- Popup with detailed info: percentage, status, charge/discharge rate, energy capacity, time remaining
-- Polls about 4 times per second from `/sys/class/power_supply`
+- Panel shows text only: `-12.7W` discharging, `+26.5W` charging
+- Popup displays percentage, status, charge/discharge rate, capacity, time remaining
+- Polls `/sys/class/power_supply` 4 times per second
 
-## How accurate is the reading?
+## Install
 
-The applet displays the battery power rate reported by the kernel power-supply interface, usually `power_now` in `/sys/class/power_supply/BAT0/`. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
+### Flatpak (recommended)
 
-**Good for:** comparing battery power use between idle and load, and watching charge rate.
+```bash
+flatpak remote-add --if-not-exists --user cosmic https://apt.pop-os.org/cosmic/cosmic.flatpakrepo
+flatpak install --user cosmic io.github.AceMythos.cosmic-ext-applet-power-monitor
+```
 
-**Limitations:**
-
-- Shows **battery charge/discharge power**, not total laptop power draw
-- Values come from the battery firmware/driver, not an external watt meter
-- Updates about every 250 ms, so readings can still fluctuate between samples
-- The label is hidden when no rate is available (e.g. fully charged, `0 W`)
-
-## Requirements
-
-- Pop!_OS 24.04+ with COSMIC desktop (or any COSMIC-based system)
-- Rust toolchain: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- System dev packages (run setup.sh)
-
-## Quick Install
+### Build from source
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-Then add **Power Monitor for the COSMIC™ Desktop** to your panel:
-**COSMIC Settings → Desktop → Panel → Add applet**
+Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel -> Add applet.
 
-## Manual Build
+## How the reading works
 
-```bash
-# Install system deps
-sudo apt install libxkbcommon-dev libfontconfig-dev libfreetype-dev libexpat1-dev cmake pkgconf
+The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/BAT0/`. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
-# Build
-. "$HOME/.cargo/env"
-cargo build --release
+The number is battery charge/discharge power, not total system draw. The label hides when no rate is available. The applet polls every 250ms.
 
-# Install
-sudo cp target/release/cosmic-power-monitor /usr/local/bin/
-sudo cp resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop /usr/share/applications/
-```
+## Requirements
 
-## Uninstall
-
-```bash
-just uninstall
-```
+- Pop!_OS 24.04+ with COSMIC desktop
+- Rust toolchain (for source builds): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 ## License
 

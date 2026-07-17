@@ -1,5 +1,5 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-0.1.1-blue)
+![Version](https://img.shields.io/badge/version-0.1.7-blue)
 ![Rust](https://img.shields.io/badge/rust-1.70+-orange)
 
 # Power Monitor for the COSMIC Desktop

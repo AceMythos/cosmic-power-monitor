@@ -50,6 +50,12 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.1.7" date="2026-07-17">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.7</url>
+      <description>
+        <p>Fixed swapped charging/discharging screenshots in store listing.</p>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-07-17">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.6</url>
       <description>

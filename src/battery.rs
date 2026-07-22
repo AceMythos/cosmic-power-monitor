@@ -51,6 +51,10 @@ pub async fn poll_battery() -> Result<BatteryData, String> {
 fn battery_path() -> Result<PathBuf, String> {
     let entries = fs::read_dir(POWER_SUPPLY_DIR).map_err(|e| e.to_string())?;
 
+    // read_dir order isn't guaranteed, so a peripheral's battery node could come
+    // before the real one; prefer scope != "Device" and only fall back otherwise.
+    let mut fallback: Option<PathBuf> = None;
+
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -59,12 +63,20 @@ fn battery_path() -> Result<PathBuf, String> {
         }
 
         let battery_type = read_trimmed(&path, "type").unwrap_or_default();
-        if battery_type == "Battery" {
-            return Ok(path);
+        if battery_type != "Battery" {
+            continue;
         }
+
+        let scope = read_trimmed(&path, "scope").unwrap_or_default();
+        if scope == "Device" {
+            fallback.get_or_insert(path);
+            continue;
+        }
+
+        return Ok(path);
     }
 
-    Err("No battery detected".to_string())
+    fallback.ok_or_else(|| "No battery detected".to_string())
 }
 
 fn estimate_times(status: &str, energy: f64, energy_full: f64, energy_rate: f64) -> (i64, i64) {

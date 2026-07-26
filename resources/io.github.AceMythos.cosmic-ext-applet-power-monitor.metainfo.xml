@@ -50,6 +50,12 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.1.8" date="2026-07-26">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.8</url>
+      <description>
+        <p>Fix battery detection on systems with peripheral battery devices (touchpad, keyboard). Uses kernel's scope attribute to prefer the system battery over device batteries.</p>
+      </description>
+    </release>
     <release version="0.1.7" date="2026-07-17">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.7</url>
       <description>

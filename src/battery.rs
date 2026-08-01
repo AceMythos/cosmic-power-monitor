@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use log::{debug, error, warn};
+
 const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
 
 #[derive(Debug, Clone, Default)]
@@ -37,6 +39,16 @@ pub async fn poll_battery() -> Result<BatteryData, String> {
 
     let (time_to_empty, time_to_full) = estimate_times(&status, energy, energy_full, energy_rate);
 
+    debug!(
+        "poll: battery={} {:.1}% status={} rate={:.3}W energy={:.2}Wh full={:.2}Wh",
+        battery_path.display(),
+        percentage,
+        status,
+        energy_rate,
+        energy,
+        energy_full,
+    );
+
     Ok(BatteryData {
         energy_rate,
         percentage,
@@ -69,14 +81,25 @@ fn battery_path() -> Result<PathBuf, String> {
 
         let scope = read_trimmed(&path, "scope").unwrap_or_default();
         if scope == "Device" {
+            debug!("battery node {} has scope=Device, keeping as fallback", path.display());
             fallback.get_or_insert(path);
             continue;
         }
 
+        debug!("battery selected: {} (scope={})", path.display(), scope);
         return Ok(path);
     }
 
-    fallback.ok_or_else(|| "No battery detected".to_string())
+    match &fallback {
+        Some(path) => {
+            warn!("no system battery found, falling back to peripheral: {}", path.display());
+            Ok(path.clone())
+        }
+        None => {
+            error!("no battery detected under {}", POWER_SUPPLY_DIR);
+            Err("No battery detected".to_string())
+        }
+    }
 }
 
 fn estimate_times(status: &str, energy: f64, energy_full: f64, energy_rate: f64) -> (i64, i64) {

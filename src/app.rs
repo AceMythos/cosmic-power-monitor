@@ -57,9 +57,7 @@ pub enum Message {
 
 impl PowerMonitor {
     fn format_watts(w: f64) -> String {
-        if w >= 10.0 {
-            format!("{:.1}W", w)
-        } else if w >= 1.0 {
+        if w >= 1.0 {
             format!("{:.1}W", w)
         } else if w >= 0.1 {
             format!("{:.2}W", w)
@@ -160,6 +158,7 @@ impl cosmic::Application for PowerMonitor {
     }
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
+        log::info!("Starting Power Monitor");
         let app = PowerMonitor {
             core,
             ..Default::default()
@@ -168,7 +167,10 @@ impl cosmic::Application for PowerMonitor {
             app,
             Task::perform(battery::poll_battery(), |result| match result {
                 Ok(data) => Message::Update(data),
-                Err(_) => Message::NoBattery,
+                Err(e) => {
+                    log::debug!("initial battery poll failed: {e}");
+                    Message::NoBattery
+                }
             })
             .map(Action::App),
         )
@@ -210,6 +212,12 @@ impl cosmic::Application for PowerMonitor {
                 }
             }
             Message::Update(data) => {
+                log::debug!(
+                    "battery update: {:.1}% {} {:.3}W",
+                    data.percentage,
+                    data.status,
+                    data.energy_rate
+                );
                 self.watts = data.energy_rate;
                 self.display_watts.go_mut(data.energy_rate as f32, Instant::now());
                 self.percentage = data.percentage;
@@ -221,6 +229,9 @@ impl cosmic::Application for PowerMonitor {
                 self.no_battery = false;
             }
             Message::NoBattery => {
+                if !self.no_battery {
+                    log::warn!("No battery detected");
+                }
                 self.no_battery = true;
                 self.watts = 0.0;
                 self.percentage = 0.0;
@@ -372,7 +383,10 @@ impl cosmic::Application for PowerMonitor {
                     |_| async move {
                         let message = match battery::poll_battery().await {
                             Ok(data) => Some((Message::Update(data), ())),
-                            Err(_) => Some((Message::NoBattery, ())),
+                            Err(e) => {
+                                log::debug!("poll_battery failed: {e}");
+                                Some((Message::NoBattery, ()))
+                            }
                         };
                         tokio::time::sleep(Duration::from_millis(250)).await;
                         message

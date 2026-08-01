@@ -57,6 +57,21 @@ The applet reads `power_now` from the kernel power-supply interface in `/sys/cla
 
 The number is battery charge/discharge power, not total system draw. The label hides when no rate is available. The applet polls every 250ms.
 
+## Debugging / Logs
+
+The applet logs to stderr using the `log` crate. When running as a Flatpak under
+COSMIC, stderr lands in the user journal:
+
+```bash
+# Live log stream (INFO and above)
+journalctl --user -f | grep -i power
+```
+
+When running from source, logs appear directly in the terminal. Default level is
+`info`; use `RUST_LOG=debug cargo build && ./target/release/cosmic-power-monitor`
+for verbose detail (per-poll readings, battery selection) or `RUST_LOG=warn` for
+errors only.
+
 ## Requirements
 
 - Pop!_OS 24.04+ with COSMIC desktop

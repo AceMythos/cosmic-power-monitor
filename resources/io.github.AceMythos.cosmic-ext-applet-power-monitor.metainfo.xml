@@ -37,7 +37,7 @@
   </screenshots>
   <url type="homepage">https://github.com/AceMythos/cosmic-power-monitor</url>
   <url type="bugtracker">https://github.com/AceMythos/cosmic-power-monitor/issues</url>
-  <developer id="io.github.AceMythos">
+  <developer id="io.github.acemythos">
     <name>AceMythos</name>
   </developer>
   <launchable type="desktop-id">io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop</launchable>

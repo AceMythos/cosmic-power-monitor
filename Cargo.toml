@@ -21,3 +21,9 @@ features = ["rt", "time"]
 
 [dependencies.futures-util]
 version = "0.3"
+
+[dependencies.log]
+version = "0.4"
+
+[dependencies.env_logger]
+version = "0.11"

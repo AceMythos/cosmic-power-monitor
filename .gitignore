@@ -6,3 +6,5 @@ COSMIC_UTILS_WEBSITE_REPORT.md
 ROADMAP.md 
 cosmic-project-collection/
 .foglamp/
+packages-microsoft-prod.deb*
+wget-log

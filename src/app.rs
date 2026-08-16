@@ -67,7 +67,13 @@ impl PowerMonitor {
     }
 
     fn format_power_string(&self, watts: f64) -> String {
-        if self.no_battery || watts <= 0.0 {
+        if self.no_battery {
+            return String::new();
+        }
+        if matches!(self.status.as_str(), "Full" | "Fully Charged") {
+            return "✓ Full".to_string();
+        }
+        if watts <= 0.0 {
             return String::new();
         }
         let sign = if self.status == "Charging" { "+" } else { "-" };

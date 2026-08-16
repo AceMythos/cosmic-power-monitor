@@ -8,3 +8,5 @@ cosmic-project-collection/
 .foglamp/
 packages-microsoft-prod.deb*
 wget-log
+.playwright-mcp/ 
+AGENTS.md

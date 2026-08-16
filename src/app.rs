@@ -262,11 +262,12 @@ impl cosmic::Application for PowerMonitor {
             return self.core.applet.popup_container(column::with_children(content)).into();
         }
 
+        let level = ((self.percentage / 10.0).floor() as u8).min(10) * 10;
         let status_icon = match self.status.as_str() {
-            "Charging" => "emblem-ok-symbolic",
-            "Discharging" => "battery-level-50-symbolic",
-            "Fully Charged" => "battery-level-100-symbolic",
-            _ => "battery-symbolic",
+            "Fully Charged" => "battery-level-100-charged-symbolic".to_string(),
+            "Charging" if level == 100 => "battery-level-100-charged-symbolic".to_string(),
+            "Charging" => format!("battery-level-{level}-charging-symbolic"),
+            _ => format!("battery-level-{level}-symbolic"),
         };
 
         content.push(

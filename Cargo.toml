@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic"
 default-features = false
-features = ["applet", "tokio", "wayland"]
+features = ["applet", "tokio", "wayland", "dbus-config"]
 
 [dependencies.zbus]
 version = "5"

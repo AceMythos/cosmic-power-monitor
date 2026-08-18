@@ -12,7 +12,7 @@ If this saves you guesswork, star the repo.
 
 | Charging | Discharging |
 |----------|-------------|
-| ![Charging](screenshots/charge.png) | ![Discharging](screenshots/discharge.png) |
+| ![Charging](screenshots/charge2.png) | ![Discharging](screenshots/discharge2.png) |
 
 ## What it does
 

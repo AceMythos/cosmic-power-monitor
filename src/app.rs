@@ -4,7 +4,7 @@ use cosmic::iced::mouse;
 use cosmic::iced::platform_specific::shell::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{Length, Limits, Subscription};
-use cosmic::widget::{button, canvas, column, container, divider, icon, row, text};
+use cosmic::widget::{button, canvas, column, container, divider, row, text};
 use cosmic::{Action, Element, Task, Theme};
 use cosmic::iced::Color;
 use std::time::{Duration, Instant};
@@ -101,6 +101,16 @@ impl PowerMonitor {
     }
 }
 
+fn battery_fill_color(pct: f32) -> Color {
+    if pct > 0.6 {
+        Color::from_rgb(0.3, 0.8, 0.3)
+    } else if pct > 0.2 {
+        Color::from_rgb(0.9, 0.6, 0.1)
+    } else {
+        Color::from_rgb(0.8, 0.2, 0.2)
+    }
+}
+
 struct BatteryBar {
     percentage: f32,
 }
@@ -129,13 +139,7 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryBar {
             track_color,
         );
 
-        let fill_color = if self.percentage > 0.6 {
-            Color::from_rgb(0.3, 0.8, 0.3)
-        } else if self.percentage > 0.2 {
-            Color::from_rgb(0.9, 0.6, 0.1)
-        } else {
-            Color::from_rgb(0.8, 0.2, 0.2)
-        };
+        let fill_color = battery_fill_color(self.percentage);
 
         if fill_width > 0.0 {
             frame.fill_rectangle(
@@ -144,6 +148,75 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryBar {
                 fill_color,
             );
         }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+struct BatteryIcon {
+    percentage: f32,
+    charging: bool,
+}
+
+impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::iced::Renderer,
+        _theme: &Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        let body = cosmic::iced::Rectangle::new(
+            cosmic::iced::Point::new(1.0, 1.0),
+            cosmic::iced::Size::new(44.0, 30.0),
+        );
+        let outline = Color::from_rgba(0.5, 0.5, 0.5, 0.5);
+
+        let fill_color = battery_fill_color(self.percentage);
+        let fill_width = (body.width - 8.0) * self.percentage.clamp(0.0, 1.0);
+        if fill_width > 0.0 {
+            frame.fill_rectangle(
+                cosmic::iced::Point::new(4.0, 4.0),
+                cosmic::iced::Size::new(fill_width, body.height - 8.0),
+                fill_color,
+            );
+        }
+
+        frame.fill_rectangle(
+            cosmic::iced::Point::new(45.0, 11.0),
+            cosmic::iced::Size::new(3.0, 10.0),
+            outline,
+        );
+
+        if self.charging && self.percentage < 1.0 {
+            let bolt = canvas::Path::new(|b| {
+                b.move_to(cosmic::iced::Point::new(26.0, 5.0));
+                b.line_to(cosmic::iced::Point::new(19.0, 16.0));
+                b.line_to(cosmic::iced::Point::new(23.0, 16.0));
+                b.line_to(cosmic::iced::Point::new(15.0, 27.0));
+                b.line_to(cosmic::iced::Point::new(26.0, 17.0));
+                b.line_to(cosmic::iced::Point::new(22.0, 17.0));
+                b.close();
+            });
+            frame.fill(&bolt, Color::from_rgba(1.0, 1.0, 1.0, 0.92));
+        }
+
+        let body_path = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                body.position(),
+                body.size(),
+                cosmic::iced::border::Radius::from(4.0),
+            )
+        });
+        frame.stroke(
+            &body_path,
+            canvas::Stroke::default().with_width(2.0).with_color(outline),
+        );
 
         vec![frame.into_geometry()]
     }
@@ -268,18 +341,17 @@ impl cosmic::Application for PowerMonitor {
             return self.core.applet.popup_container(column::with_children(content)).into();
         }
 
-        let level = ((self.percentage / 10.0).floor() as u8).min(10) * 10;
-        let status_icon = match self.status.as_str() {
-            "Fully Charged" => "battery-level-100-charged-symbolic".to_string(),
-            "Charging" if level == 100 => "battery-level-100-charged-symbolic".to_string(),
-            "Charging" => format!("battery-level-{level}-charging-symbolic"),
-            _ => format!("battery-level-{level}-symbolic"),
-        };
+        let battery_icon = canvas::Canvas::<BatteryIcon, Message, Theme>::new(BatteryIcon {
+            percentage: (self.percentage / 100.0) as f32,
+            charging: self.status == "Charging",
+        })
+        .width(Length::Fixed(48.0))
+        .height(Length::Fixed(32.0));
 
         content.push(
             container(
                 row![
-                    icon::from_name(status_icon).size(32),
+                    battery_icon,
                     column![
                         text::title1(format!("{:.0}%", self.percentage)),
                         text::caption(&self.status),

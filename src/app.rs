@@ -13,6 +13,10 @@ use crate::battery;
 
 const ID: &str = "io.github.AceMythos.cosmic-ext-applet-power-monitor";
 
+/// Rendered when there is no rate to report, so the panel entry stays wide
+/// enough to click.
+const EMPTY_LABEL: &str = "—";
+
 pub struct PowerMonitor {
     core: Core,
     popup: Option<Id>,
@@ -322,7 +326,14 @@ impl cosmic::Application for PowerMonitor {
 
     fn view(&self) -> Element<'_, Self::Message> {
         let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
-        let content = text::body(self.format_power_string(animated));
+        let label = self.format_power_string(animated);
+        // An empty label renders a button with nothing in it, leaving a sliver of
+        // padding as the only target for opening the popup.
+        let content = text::body(if label.is_empty() {
+            EMPTY_LABEL.to_string()
+        } else {
+            label
+        });
 
         let btn = button::custom(content)
             .on_press_down(Message::TogglePopup)

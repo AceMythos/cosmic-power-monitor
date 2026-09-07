@@ -324,7 +324,11 @@ impl cosmic::Application for PowerMonitor {
         let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
         let content = text::body(self.format_power_string(animated));
 
+        // AppletIcon draws no background at rest, just a hover highlight, and takes
+        // its text colour from the panel, so the applet sits among the other panel
+        // icons instead of on a grey pill.
         let btn = button::custom(content)
+            .class(cosmic::theme::Button::AppletIcon)
             .on_press_down(Message::TogglePopup)
             .padding([4, 8]);
 

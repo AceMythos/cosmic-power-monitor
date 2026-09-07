@@ -1,5 +1,6 @@
 mod app;
 mod battery;
+mod config;
 
 use crate::app::PowerMonitor;
 

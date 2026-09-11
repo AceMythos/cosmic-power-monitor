@@ -1035,7 +1035,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-power-monitor"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "env_logger",
  "futures-util",

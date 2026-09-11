@@ -3,8 +3,8 @@
   <id>io.github.AceMythos.cosmic-ext-applet-power-monitor</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
-  <name>Power Monitor for the COSMIC™ Desktop</name>
-  <summary>Display real-time battery power draw in watts for the COSMIC™ desktop</summary>
+  <name>Power Monitor</name>
+  <summary>Battery watts on your panel</summary>
   <description>
     <p>
       Shows your laptop's battery draw in watts right on the COSMIC panel. Reads
@@ -50,6 +50,12 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.1.9" date="2026-09-11">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.9</url>
+      <description>
+        <p>Show "Stopped" when charge threshold limits charging. Shorten app name and summary for Flathub store compliance. Install SVG icon in Flatpak builds.</p>
+      </description>
+    </release>
     <release version="0.1.8" date="2026-07-26">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.8</url>
       <description>

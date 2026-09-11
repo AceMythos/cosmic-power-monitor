@@ -45,6 +45,7 @@ pub struct PowerMonitor {
     config: PowerMonitorConfig,
     config_handler: Option<Config>,
     display_modes: segmented_button::SingleSelectModel,
+    batteries: Vec<battery::BatteryInfo>,
 }
 
 impl Default for PowerMonitor {
@@ -66,6 +67,7 @@ impl Default for PowerMonitor {
             config: PowerMonitorConfig::default(),
             config_handler: None,
             display_modes: segmented_button::SingleSelectModel::default(),
+            batteries: Vec::new(),
         }
     }
 }
@@ -99,6 +101,9 @@ impl PowerMonitor {
             return "✓ Full".to_string();
         }
         if watts <= 0.0 {
+            if self.status == "Charging" || self.status == "Not charging" {
+                return "Stopped".to_string();
+            }
             return String::new();
         }
         let sign = if self.status == "Charging" { "+" } else { "-" };
@@ -362,7 +367,7 @@ impl cosmic::Application for PowerMonitor {
 
         (
             app,
-            Task::perform(battery::poll_battery(), |result| match result {
+            Task::perform(battery::poll_batteries(), |result| match result {
                 Ok(data) => Message::Update(data),
                 Err(e) => {
                     log::debug!("initial battery poll failed: {e}");
@@ -427,6 +432,7 @@ impl cosmic::Application for PowerMonitor {
                 self.energy = data.energy;
                 self.energy_full = data.energy_full;
                 self.no_battery = false;
+                self.batteries = data.batteries;
             }
             Message::NoBattery => {
                 if !self.no_battery {
@@ -436,6 +442,7 @@ impl cosmic::Application for PowerMonitor {
                 self.watts = 0.0;
                 self.percentage = 0.0;
                 self.status = String::new();
+                self.batteries = Vec::new();
             }
             Message::DisplayModeSelected(entity) => {
                 let Some(mode) = self.display_modes.data::<PanelDisplay>(entity).copied() else {
@@ -531,6 +538,25 @@ impl cosmic::Application for PowerMonitor {
             .into(),
         );
 
+        if self.batteries.len() > 1 {
+            content.push(divider::horizontal::default().into());
+            for b in &self.batteries {
+                let watts_str = if b.energy_rate > 0.0 {
+                    let sign = if b.status == "Charging" { "+" } else { "-" };
+                    format!("  {}{}", sign, Self::format_watts(b.energy_rate))
+                } else {
+                    String::new()
+                };
+                content.push(
+                    container(
+                        text::body(format!("{}  {:.0}%  {}{}", b.name, b.percentage, b.status, watts_str)),
+                    )
+                    .padding([4, 12])
+                    .into(),
+                );
+            }
+        }
+
         content.push(divider::horizontal::default().into());
 
         if self.watts > 0.0 {
@@ -614,7 +640,7 @@ impl cosmic::Application for PowerMonitor {
                 futures_util::stream::unfold(
                     (),
                     |_| async move {
-                        let message = match battery::poll_battery().await {
+                        let message = match battery::poll_batteries().await {
                             Ok(data) => Some((Message::Update(data), ())),
                             Err(e) => {
                                 log::debug!("poll_battery failed: {e}");

@@ -30,7 +30,8 @@
         "cargo --offline build --release --verbose",
         "install -Dm0755 ./target/release/cosmic-power-monitor /app/bin/cosmic-power-monitor",
         "install -Dm0644 ./resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop /app/share/applications/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop",
-        "install -Dm0644 ./resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.metainfo.xml /app/share/metainfo/io.github.AceMythos.cosmic-ext-applet-power-monitor.metainfo.xml"
+        "install -Dm0644 ./resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.metainfo.xml /app/share/metainfo/io.github.AceMythos.cosmic-ext-applet-power-monitor.metainfo.xml",
+        "install -Dm0644 ./resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.svg /app/share/icons/hicolor/scalable/apps/io.github.AceMythos.cosmic-ext-applet-power-monitor.svg"
       ],
       "sources": [
         {

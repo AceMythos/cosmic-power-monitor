@@ -6,6 +6,16 @@ use log::{debug, error, warn};
 const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
 
 #[derive(Debug, Clone, Default)]
+pub struct BatteryInfo {
+    pub name: String,
+    pub energy_rate: f64,
+    pub percentage: f64,
+    pub status: String,
+    pub energy: f64,
+    pub energy_full: f64,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct BatteryData {
     pub energy_rate: f64,
     pub percentage: f64,
@@ -14,40 +24,91 @@ pub struct BatteryData {
     pub time_to_full: i64,
     pub energy: f64,
     pub energy_full: f64,
+    pub batteries: Vec<BatteryInfo>,
 }
 
-pub async fn poll_battery() -> Result<BatteryData, String> {
-    let battery_path = battery_path()?;
+fn read_battery_info(path: &Path) -> Result<BatteryInfo, String> {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
 
-    let status = read_trimmed(&battery_path, "status")?;
-    let percentage = read_f64(&battery_path, "capacity")
+    let status = read_trimmed(path, "status").unwrap_or_default();
+    let percentage = read_f64(path, "capacity")
         .or_else(|_| {
-            let energy = read_f64(&battery_path, "energy_now")?;
-            let energy_full = read_f64(&battery_path, "energy_full")?;
+            let energy = read_f64(path, "energy_now")?;
+            let energy_full = read_f64(path, "energy_full")?;
             if energy_full <= 0.0 {
                 return Err("energy_full is zero".to_string());
             }
-
             Ok((energy / energy_full) * 100.0)
-        })?;
+        })
+        .unwrap_or(0.0);
 
-    let energy = read_energy_wh(&battery_path, "energy_now")
-        .or_else(|_| read_charge_as_energy_wh(&battery_path, "charge_now"))?;
-    let energy_full = read_energy_wh(&battery_path, "energy_full")
-        .or_else(|_| read_charge_as_energy_wh(&battery_path, "charge_full"))?;
-    let energy_rate = read_power_watts(&battery_path)?;
-
-    let (time_to_empty, time_to_full) = estimate_times(&status, energy, energy_full, energy_rate);
+    let energy = read_energy_wh(path, "energy_now")
+        .or_else(|_| read_charge_as_energy_wh(path, "charge_now"))
+        .unwrap_or(0.0);
+    let energy_full = read_energy_wh(path, "energy_full")
+        .or_else(|_| read_charge_as_energy_wh(path, "charge_full"))
+        .unwrap_or(0.0);
+    let energy_rate = read_power_watts(path).unwrap_or(0.0);
 
     debug!(
         "poll: battery={} {:.1}% status={} rate={:.3}W energy={:.2}Wh full={:.2}Wh",
-        battery_path.display(),
+        path.display(),
         percentage,
         status,
         energy_rate,
         energy,
         energy_full,
     );
+
+    Ok(BatteryInfo {
+        name,
+        energy_rate,
+        percentage,
+        status,
+        energy,
+        energy_full,
+    })
+}
+
+pub async fn poll_batteries() -> Result<BatteryData, String> {
+    let paths = find_batteries()?;
+    let mut infos = Vec::with_capacity(paths.len());
+
+    for path in &paths {
+        match read_battery_info(path) {
+            Ok(info) => infos.push(info),
+            Err(e) => warn!("failed to read {}: {}", path.display(), e),
+        }
+    }
+
+    if infos.is_empty() {
+        return Err("No battery data readable".to_string());
+    }
+
+    let energy: f64 = infos.iter().map(|b| b.energy).sum();
+    let energy_full: f64 = infos.iter().map(|b| b.energy_full).sum();
+    let energy_rate: f64 = infos.iter().map(|b| b.energy_rate).sum();
+    let percentage = if energy_full > 0.0 {
+        100.0 * energy / energy_full
+    } else {
+        0.0
+    };
+
+    let status = if infos.iter().all(|b| b.status == "Full" || b.status == "Fully Charged") {
+        "Full".to_string()
+    } else {
+        infos
+            .iter()
+            .find(|b| b.status != "Full" && b.status != "Fully Charged")
+            .map(|b| b.status.clone())
+            .unwrap_or_default()
+    };
+
+    let (time_to_empty, time_to_full) = estimate_times(&status, energy, energy_full, energy_rate);
 
     Ok(BatteryData {
         energy_rate,
@@ -57,15 +118,13 @@ pub async fn poll_battery() -> Result<BatteryData, String> {
         time_to_full,
         energy,
         energy_full,
+        batteries: infos,
     })
 }
 
-fn battery_path() -> Result<PathBuf, String> {
+fn find_batteries() -> Result<Vec<PathBuf>, String> {
     let entries = fs::read_dir(POWER_SUPPLY_DIR).map_err(|e| e.to_string())?;
-
-    // read_dir order isn't guaranteed, so a peripheral's battery node could come
-    // before the real one; prefer scope != "Device" and only fall back otherwise.
-    let mut fallback: Option<PathBuf> = None;
+    let mut batteries = Vec::new();
 
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -79,27 +138,16 @@ fn battery_path() -> Result<PathBuf, String> {
             continue;
         }
 
-        let scope = read_trimmed(&path, "scope").unwrap_or_default();
-        if scope == "Device" {
-            debug!("battery node {} has scope=Device, keeping as fallback", path.display());
-            fallback.get_or_insert(path);
-            continue;
-        }
-
-        debug!("battery selected: {} (scope={})", path.display(), scope);
-        return Ok(path);
+        debug!("battery found: {}", path.display());
+        batteries.push(path);
     }
 
-    match &fallback {
-        Some(path) => {
-            warn!("no system battery found, falling back to peripheral: {}", path.display());
-            Ok(path.clone())
-        }
-        None => {
-            error!("no battery detected under {}", POWER_SUPPLY_DIR);
-            Err("No battery detected".to_string())
-        }
+    if batteries.is_empty() {
+        error!("no battery detected under {}", POWER_SUPPLY_DIR);
+        return Err("No battery detected".to_string());
     }
+
+    Ok(batteries)
 }
 
 fn estimate_times(status: &str, energy: f64, energy_full: f64, energy_rate: f64) -> (i64, i64) {

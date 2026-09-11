@@ -1,17 +1,34 @@
 use cosmic::app::Core;
+use cosmic::cosmic_config::{Config, CosmicConfigEntry};
 use cosmic::iced::core::animation::{Animation, Easing};
 use cosmic::iced::mouse;
 use cosmic::iced::platform_specific::shell::commands::popup::{destroy_popup, get_popup};
 use cosmic::iced::window::Id;
 use cosmic::iced::{Length, Limits, Subscription};
-use cosmic::widget::{button, canvas, column, container, divider, row, text};
+use cosmic::widget::{
+    button, canvas, column, container, divider, row, segmented_button, segmented_control, text,
+};
 use cosmic::{Action, Element, Task, Theme};
 use cosmic::iced::Color;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::battery;
+use crate::config::{PanelDisplay, PowerMonitorConfig};
 
 const ID: &str = "io.github.AceMythos.cosmic-ext-applet-power-monitor";
+
+/// Poll cadence, read fresh by the subscription on every tick so a mode change
+/// takes effect without tearing down and rebuilding the subscription.
+static POLL_MS: AtomicU64 = AtomicU64::new(FAST_POLL_MS);
+
+/// Rendered when the selected mode has no reading to show, so the panel entry
+/// stays wide enough to click.
+const EMPTY_LABEL: &str = "—";
+
+/// Watts move fast enough to need a tight loop; charge level does not.
+const FAST_POLL_MS: u64 = 250;
+const SLOW_POLL_MS: u64 = 5_000;
 
 pub struct PowerMonitor {
     core: Core,
@@ -25,6 +42,9 @@ pub struct PowerMonitor {
     energy: f64,
     energy_full: f64,
     no_battery: bool,
+    config: PowerMonitorConfig,
+    config_handler: Option<Config>,
+    display_modes: segmented_button::SingleSelectModel,
 }
 
 impl Default for PowerMonitor {
@@ -43,6 +63,9 @@ impl Default for PowerMonitor {
             energy: 0.0,
             energy_full: 0.0,
             no_battery: false,
+            config: PowerMonitorConfig::default(),
+            config_handler: None,
+            display_modes: segmented_button::SingleSelectModel::default(),
         }
     }
 }
@@ -53,6 +76,8 @@ pub enum Message {
     PopupClosed(Id),
     Update(battery::BatteryData),
     NoBattery,
+    DisplayModeSelected(segmented_button::Entity),
+    ConfigUpdated(PowerMonitorConfig),
 }
 
 impl PowerMonitor {
@@ -66,7 +91,7 @@ impl PowerMonitor {
         }
     }
 
-    fn format_power_string(&self, watts: f64) -> String {
+    fn format_power_string(&self, watts: f64, with_time: bool) -> String {
         if self.no_battery {
             return String::new();
         }
@@ -78,11 +103,77 @@ impl PowerMonitor {
         }
         let sign = if self.status == "Charging" { "+" } else { "-" };
         let time = match self.status.as_str() {
-            "Charging" if self.time_to_full > 0 => format!("({})", Self::format_time(self.time_to_full)),
-            "Discharging" if self.time_to_empty > 0 => format!("({})", Self::format_time(self.time_to_empty)),
+            "Charging" if with_time && self.time_to_full > 0 => {
+                format!("({})", Self::format_time(self.time_to_full))
+            }
+            "Discharging" if with_time && self.time_to_empty > 0 => {
+                format!("({})", Self::format_time(self.time_to_empty))
+            }
             _ => String::new(),
         };
         format!("{}{}{}", sign, Self::format_watts(watts), time)
+    }
+
+    fn format_percentage(&self) -> String {
+        if self.no_battery {
+            return String::new();
+        }
+        format!("{:.0}%", self.percentage)
+    }
+
+    /// The panel label, per the configured display mode.
+    fn format_panel_string(&self, watts: f64) -> String {
+        let label = match self.config.panel_display {
+            PanelDisplay::Percentage => self.format_percentage(),
+            PanelDisplay::Power => self.format_power_string(watts, true),
+            PanelDisplay::Both => {
+                let percentage = self.format_percentage();
+                // No time estimate here, or the panel entry gets very wide.
+                let power = self.format_power_string(watts, false);
+                match (percentage.is_empty(), power.is_empty()) {
+                    (_, true) => percentage,
+                    (true, _) => power,
+                    _ => format!("{}  {}", percentage, power),
+                }
+            }
+        };
+
+        // A mode with nothing to report would otherwise render an empty button,
+        // leaving only a sliver of padding to click to reach the popup. A battery
+        // idling at a charge threshold reports 0W indefinitely, so this is not a
+        // momentary state.
+        if label.is_empty() {
+            EMPTY_LABEL.to_string()
+        } else {
+            label
+        }
+    }
+
+    /// Charge level only needs a lazy poll, but the popup shows live watts, so
+    /// stay fast whenever it is open.
+    fn poll_interval_ms(&self) -> u64 {
+        if self.popup.is_some() || self.config.panel_display != PanelDisplay::Percentage {
+            FAST_POLL_MS
+        } else {
+            SLOW_POLL_MS
+        }
+    }
+
+    fn apply_poll_interval(&self) {
+        POLL_MS.store(self.poll_interval_ms(), Ordering::Relaxed);
+    }
+
+    /// Point the segmented control at whatever the config currently says.
+    fn sync_display_modes(&mut self) {
+        let active = self
+            .display_modes
+            .iter()
+            .find(|entity| {
+                self.display_modes.data::<PanelDisplay>(*entity) == Some(&self.config.panel_display)
+            });
+        if let Some(entity) = active {
+            self.display_modes.activate(entity);
+        }
     }
 
     fn format_time(seconds: i64) -> String {
@@ -238,10 +329,37 @@ impl cosmic::Application for PowerMonitor {
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         log::info!("Starting Power Monitor");
-        let app = PowerMonitor {
+
+        let config_handler = Config::new(ID, PowerMonitorConfig::VERSION)
+            .inspect_err(|e| log::warn!("failed to open config, using defaults: {e}"))
+            .ok();
+        let config = config_handler
+            .as_ref()
+            .map(|handler| {
+                PowerMonitorConfig::get_entry(handler).unwrap_or_else(|(errs, config)| {
+                    for err in errs {
+                        log::warn!("config load error: {err}");
+                    }
+                    config
+                })
+            })
+            .unwrap_or_default();
+
+        let mut display_modes = segmented_button::SingleSelectModel::default();
+        for mode in PanelDisplay::ALL {
+            display_modes.insert().text(mode.label()).data(mode);
+        }
+
+        let mut app = PowerMonitor {
             core,
+            config,
+            config_handler,
+            display_modes,
             ..Default::default()
         };
+        app.sync_display_modes();
+        app.apply_poll_interval();
+
         (
             app,
             Task::perform(battery::poll_battery(), |result| match result {
@@ -263,6 +381,7 @@ impl cosmic::Application for PowerMonitor {
         match message {
             Message::TogglePopup => {
                 return if let Some(popup_id) = self.popup.take() {
+                    self.apply_poll_interval();
                     destroy_popup(popup_id)
                 } else {
                     let new_id = Id::unique();
@@ -282,12 +401,14 @@ impl cosmic::Application for PowerMonitor {
                         .min_height(200.0)
                         .max_height(1080.0);
 
+                    self.apply_poll_interval();
                     get_popup(popup_settings)
                 };
             }
             Message::PopupClosed(popup_id) => {
                 if self.popup.as_ref() == Some(&popup_id) {
                     self.popup = None;
+                    self.apply_poll_interval();
                 }
             }
             Message::Update(data) => {
@@ -316,13 +437,32 @@ impl cosmic::Application for PowerMonitor {
                 self.percentage = 0.0;
                 self.status = String::new();
             }
+            Message::DisplayModeSelected(entity) => {
+                let Some(mode) = self.display_modes.data::<PanelDisplay>(entity).copied() else {
+                    return Task::none();
+                };
+                self.display_modes.activate(entity);
+                self.config.panel_display = mode;
+                self.apply_poll_interval();
+
+                if let Some(handler) = &self.config_handler {
+                    if let Err(e) = self.config.set_panel_display(handler, mode) {
+                        log::warn!("failed to persist panel_display: {e}");
+                    }
+                }
+            }
+            Message::ConfigUpdated(config) => {
+                self.config = config;
+                self.sync_display_modes();
+                self.apply_poll_interval();
+            }
         }
         Task::none()
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
         let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
-        let content = text::body(self.format_power_string(animated));
+        let content = text::body(self.format_panel_string(animated));
 
         // AppletIcon draws no background at rest, just a hover highlight, and takes
         // its text colour from the panel, so the applet sits among the other panel
@@ -337,6 +477,16 @@ impl cosmic::Application for PowerMonitor {
 
     fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
         let mut content: Vec<Element<Message>> = Vec::new();
+
+        content.push(
+            container(
+                segmented_control::horizontal(&self.display_modes)
+                    .on_activate(Message::DisplayModeSelected),
+            )
+            .padding([12, 12, 8, 12])
+            .into(),
+        );
+        content.push(divider::horizontal::default().into());
 
         if self.no_battery {
             content.push(
@@ -458,7 +608,7 @@ impl cosmic::Application for PowerMonitor {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::run_with(
+        let battery = Subscription::run_with(
             std::any::TypeId::of::<()>(),
             |_state| {
                 futures_util::stream::unfold(
@@ -471,11 +621,26 @@ impl cosmic::Application for PowerMonitor {
                                 Some((Message::NoBattery, ()))
                             }
                         };
-                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        tokio::time::sleep(Duration::from_millis(POLL_MS.load(Ordering::Relaxed)))
+                            .await;
                         message
                     },
                 )
             },
-        )
+        );
+
+        // Picks up edits made to the config file directly, and keeps multiple
+        // instances of the applet in agreement.
+        let config = self
+            .core
+            .watch_config::<PowerMonitorConfig>(ID)
+            .map(|update| {
+                for err in update.errors {
+                    log::warn!("config watch error: {err}");
+                }
+                Message::ConfigUpdated(update.config)
+            });
+
+        Subscription::batch(vec![battery, config])
     }
 }

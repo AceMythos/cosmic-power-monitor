@@ -1041,6 +1041,7 @@ dependencies = [
  "futures-util",
  "libcosmic",
  "log",
+ "serde",
  "tokio",
  "zbus",
 ]

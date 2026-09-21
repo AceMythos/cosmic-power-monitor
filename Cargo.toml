@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic"
-rev = "ee5d965983957271cf759fd76e3e4eed4f188d35"
 default-features = false
 features = ["applet", "tokio", "wayland", "dbus-config"]
 
@@ -32,3 +31,5 @@ version = "0.11"
 [dependencies.serde]
 version = "1"
 features = ["derive"]
+
+

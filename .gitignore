@@ -10,3 +10,4 @@ packages-microsoft-prod.deb*
 wget-log
 .playwright-mcp/ 
 AGENTS.md
+COSMIC_FLATPAK_UPDATE_GUIDE.md

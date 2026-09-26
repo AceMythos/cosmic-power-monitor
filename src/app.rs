@@ -291,15 +291,23 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
 
         if self.charging && self.percentage < 1.0 {
             let bolt = canvas::Path::new(|b| {
-                b.move_to(cosmic::iced::Point::new(26.0, 5.0));
-                b.line_to(cosmic::iced::Point::new(19.0, 16.0));
-                b.line_to(cosmic::iced::Point::new(23.0, 16.0));
-                b.line_to(cosmic::iced::Point::new(15.0, 27.0));
-                b.line_to(cosmic::iced::Point::new(26.0, 17.0));
-                b.line_to(cosmic::iced::Point::new(22.0, 17.0));
+                b.move_to(cosmic::iced::Point::new(21.0, 6.0));
+                b.line_to(cosmic::iced::Point::new(16.0, 17.4));
+                b.line_to(cosmic::iced::Point::new(20.5, 17.4));
+                b.line_to(cosmic::iced::Point::new(20.0, 25.0));
+                b.line_to(cosmic::iced::Point::new(25.0, 13.6));
+                b.line_to(cosmic::iced::Point::new(20.5, 13.6));
                 b.close();
             });
-            frame.fill(&bolt, Color::from_rgba(1.0, 1.0, 1.0, 0.92));
+            let bolt_color = Color::from_rgba(1.0, 1.0, 1.0, 1.0);
+            frame.fill(&bolt, bolt_color);
+            frame.stroke(
+                &bolt,
+                canvas::Stroke::default()
+                    .with_width(2.0)
+                    .with_color(bolt_color)
+                    .with_line_join(canvas::LineJoin::Round),
+            );
         }
 
         let body_path = canvas::Path::new(|b| {

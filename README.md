@@ -39,7 +39,7 @@ sudo apt install libxkbcommon-dev libfontconfig-dev libfreetype-dev libexpat1-de
 cargo build --release
 
 # Install
-sudo install -Dm0755 target/release/cosmic-power-monitor /usr/local/bin/cosmic-power-monitor
+sudo install -Dm0755 target/release/cosmic-power-monitor /usr/bin/cosmic-power-monitor
 sudo install -Dm0644 resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.desktop \
     /usr/share/applications/
 sudo install -Dm0644 resources/io.github.AceMythos.cosmic-ext-applet-power-monitor.svg \

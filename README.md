@@ -1,6 +1,5 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-0.1.8-blue)
-![Rust](https://img.shields.io/badge/rust-1.70+-orange)
+![Version](https://img.shields.io/badge/version-0.1.9-blue)
 
 # Power Monitor for the COSMIC Desktop
 
@@ -53,7 +52,7 @@ Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel
 
 ## How the reading works
 
-The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It prefers the main system battery over peripheral device batteries (touchpad, keyboard) using the kernel's `scope` attribute. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
+The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It includes every device the kernel reports as `type=Battery` and sums their energy and power, so peripheral batteries count toward the total. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
 The number is battery charge/discharge power, not total system draw. The label hides when no rate is available, unless the battery is fully charged, when it shows `✓ Full`. The applet polls every 250ms.
 

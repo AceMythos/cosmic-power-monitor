@@ -15,7 +15,7 @@ If this saves you guesswork, star the repo.
 
 ## What it does
 
-- Panel shows text only: `-12.7W` discharging, `+26.5W` charging, `✓ Full` when fully charged
+- Panel shows text only: `-12.7W(2h 10m)` discharging, `+26.5W(1h 36m)` charging, `✓ Full` when fully charged
 - Popup displays percentage, status, charge/discharge rate, capacity, time remaining
 - Polls `/sys/class/power_supply` 4 times per second
 
@@ -54,7 +54,7 @@ Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel
 
 The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It includes every device the kernel reports as `type=Battery` and sums their energy and power, so peripheral batteries count toward the total. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
-The number is battery charge/discharge power, not total system draw. The label hides when no rate is available, unless the battery is fully charged, when it shows `✓ Full`. The applet polls every 250ms.
+The number is battery charge/discharge power, not total system draw. The label shows `—` when no rate is available, `✓ Full` when fully charged, and `Stopped` when the battery reports no power while charging or not charging. The applet polls every 250ms.
 
 ## Debugging / Logs
 

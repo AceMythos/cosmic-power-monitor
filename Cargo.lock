@@ -1019,8 +1019,11 @@ version = "0.1.9"
 dependencies = [
  "env_logger",
  "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
  "libcosmic",
  "log",
+ "rust-embed",
  "serde",
  "tokio",
  "zbus",

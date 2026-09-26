@@ -1,0 +1,17 @@
+no-battery = Nenhuma bateria detetada
+charge-rate = Taxa de carga
+discharge-rate = Taxa de descarga
+energy-remaining = Energia restante
+full-capacity = Capacidade total
+time-to-empty = Tempo até esvaziar
+time-to-full = Tempo até carregar
+panel-full = ✓ Completa
+panel-stopped = Parado
+mode-both = Ambos
+status-charging = A carregar
+status-discharging = A descarregar
+status-full = Completa
+status-not-charging = Não está a carregar
+seconds = s
+minutes = m
+hours = h

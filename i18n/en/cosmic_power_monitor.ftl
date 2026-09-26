@@ -1,0 +1,17 @@
+no-battery = No battery detected
+charge-rate = Charge rate
+discharge-rate = Discharge rate
+energy-remaining = Energy remaining
+full-capacity = Full capacity
+time-to-empty = Time to empty
+time-to-full = Time to full
+panel-full = ✓ Full
+panel-stopped = Stopped
+mode-both = Both
+status-charging = Charging
+status-discharging = Discharging
+status-full = Full
+status-not-charging = Not charging
+seconds = s
+minutes = m
+hours = h

@@ -2,6 +2,8 @@ use cosmic::cosmic_config::cosmic_config_derive::CosmicConfigEntry;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use serde::{Deserialize, Serialize};
 
+use crate::fl;
+
 /// What the applet renders in the panel. The popup always shows the full detail
 /// regardless of this setting.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,11 +21,11 @@ pub enum PanelDisplay {
 impl PanelDisplay {
     pub const ALL: [Self; 3] = [Self::Percentage, Self::Power, Self::Both];
 
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            Self::Percentage => "%",
-            Self::Power => "W",
-            Self::Both => "Both",
+            Self::Percentage => "%".to_string(),
+            Self::Power => "W".to_string(),
+            Self::Both => fl!("mode-both"),
         }
     }
 }

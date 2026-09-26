@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use crate::battery;
 use crate::config::{PanelDisplay, PowerMonitorConfig};
+use crate::fl;
 
 const ID: &str = "io.github.AceMythos.cosmic-ext-applet-power-monitor";
 
@@ -98,11 +99,11 @@ impl PowerMonitor {
             return String::new();
         }
         if matches!(self.status.as_str(), "Full" | "Fully Charged") {
-            return "✓ Full".to_string();
+            return fl!("panel-full").to_string();
         }
         if watts <= 0.0 {
             if self.status == "Charging" || self.status == "Not charging" {
-                return "Stopped".to_string();
+                return fl!("panel-stopped").to_string();
             }
             return String::new();
         }
@@ -188,12 +189,24 @@ impl PowerMonitor {
         let hours = seconds / 3600;
         let minutes = (seconds % 3600) / 60;
         if hours > 0 {
-            format!("{}h {}m", hours, minutes)
+            format!("{}{} {}{}", hours, fl!("hours"), minutes, fl!("minutes"))
         } else if minutes > 0 {
-            format!("{}m", minutes)
+            format!("{}{}", minutes, fl!("minutes"))
         } else {
-            format!("{}s", seconds)
+            format!("{}{}", seconds, fl!("seconds"))
         }
+    }
+}
+
+/// The kernel reports a fixed set of status strings. Name the ones we know how
+/// to name and pass anything else through, so an unexpected status still shows.
+fn localize_status(status: &str) -> String {
+    match status {
+        "Charging" => fl!("status-charging"),
+        "Discharging" => fl!("status-discharging"),
+        "Full" | "Fully Charged" => fl!("status-full"),
+        "Not charging" => fl!("status-not-charging"),
+        other => other.to_string(),
     }
 }
 
@@ -505,7 +518,7 @@ impl cosmic::Application for PowerMonitor {
 
         if self.no_battery {
             content.push(
-                container(text::body("No battery detected")).padding(12).into(),
+                container(text::body(fl!("no-battery"))).padding(12).into(),
             );
             return self.core.applet.popup_container(column::with_children(content)).into();
         }
@@ -523,7 +536,7 @@ impl cosmic::Application for PowerMonitor {
                     battery_icon,
                     column![
                         text::title1(format!("{:.0}%", self.percentage)),
-                        text::caption(&self.status),
+                        text::caption(localize_status(&self.status)),
                     ]
                     .spacing(0),
                 ]
@@ -557,7 +570,13 @@ impl cosmic::Application for PowerMonitor {
                 };
                 content.push(
                     container(
-                        text::body(format!("{}  {:.0}%  {}{}", b.name, b.percentage, b.status, watts_str)),
+                        text::body(format!(
+                            "{}  {:.0}%  {}{}",
+                            b.name,
+                            b.percentage,
+                            localize_status(&b.status),
+                            watts_str
+                        )),
                     )
                     .padding([4, 12])
                     .into(),
@@ -569,9 +588,9 @@ impl cosmic::Application for PowerMonitor {
 
         if self.watts > 0.0 {
             let label = if self.status == "Charging" {
-                "Charge rate"
+                fl!("charge-rate")
             } else {
-                "Discharge rate"
+                fl!("discharge-rate")
             };
             content.push(
                 container(
@@ -589,7 +608,7 @@ impl cosmic::Application for PowerMonitor {
         content.push(
             container(
                 row![
-                    text::body("Energy remaining").width(cosmic::iced::Length::Fill),
+                    text::body(fl!("energy-remaining")).width(cosmic::iced::Length::Fill),
                     text::body(format!("{:.1} Wh", self.energy)),
                 ]
                 .align_y(cosmic::iced::core::Alignment::Center),
@@ -601,7 +620,7 @@ impl cosmic::Application for PowerMonitor {
         content.push(
             container(
                 row![
-                    text::body("Full capacity").width(cosmic::iced::Length::Fill),
+                    text::body(fl!("full-capacity")).width(cosmic::iced::Length::Fill),
                     text::body(format!("{:.1} Wh", self.energy_full)),
                 ]
                 .align_y(cosmic::iced::core::Alignment::Center),
@@ -614,7 +633,7 @@ impl cosmic::Application for PowerMonitor {
             content.push(
                 container(
                     row![
-                        text::body("Time to empty").width(cosmic::iced::Length::Fill),
+                        text::body(fl!("time-to-empty")).width(cosmic::iced::Length::Fill),
                         text::body(Self::format_time(self.time_to_empty)),
                     ]
                     .align_y(cosmic::iced::core::Alignment::Center),
@@ -628,7 +647,7 @@ impl cosmic::Application for PowerMonitor {
             content.push(
                 container(
                     row![
-                        text::body("Time to full").width(cosmic::iced::Length::Fill),
+                        text::body(fl!("time-to-full")).width(cosmic::iced::Length::Fill),
                         text::body(Self::format_time(self.time_to_full)),
                     ]
                     .align_y(cosmic::iced::core::Alignment::Center),

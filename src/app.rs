@@ -42,6 +42,9 @@ pub struct PowerMonitor {
     time_to_full: i64,
     energy: f64,
     energy_full: f64,
+    energy_full_design: Option<f64>,
+    cycle_count: Option<u64>,
+    temperature: Option<i64>,
     no_battery: bool,
     config: PowerMonitorConfig,
     config_handler: Option<Config>,
@@ -64,6 +67,9 @@ impl Default for PowerMonitor {
             time_to_full: 0,
             energy: 0.0,
             energy_full: 0.0,
+            energy_full_design: None,
+            cycle_count: None,
+            temperature: None,
             no_battery: false,
             config: PowerMonitorConfig::default(),
             config_handler: None,
@@ -118,6 +124,71 @@ impl PowerMonitor {
             _ => String::new(),
         };
         format!("{}{}{}", sign, Self::format_watts(watts), time)
+    }
+
+    /// Capacity-based health, not laboratory-grade chemistry SoH: the kernel's
+    /// own `full` over `full_design`. Treats a missing or zero design capacity
+    /// as unknown rather than dividing by zero.
+    fn health_percentage(&self) -> Option<f64> {
+        let design = self.energy_full_design?;
+        if design <= 0.0 || self.energy_full <= 0.0 {
+            return None;
+        }
+        Some(self.energy_full / design * 100.0)
+    }
+
+    /// A label/value row with the label filling the width, so every value in the
+    /// popup shares one right edge.
+    fn detail_row<'a>(
+        label: impl Into<std::borrow::Cow<'a, str>> + 'a,
+        value: String,
+    ) -> Element<'a, Message> {
+        container(
+            row![
+                text::body(label).width(cosmic::iced::Length::Fill),
+                text::body(value),
+            ]
+            .align_y(cosmic::iced::core::Alignment::Center),
+        )
+        .padding([6, 12])
+        .into()
+    }
+
+    /// Same alignment as [`Self::detail_row`] but at caption weight, for values
+    /// that should not compete with the primary measurements.
+    fn detail_row_secondary<'a>(
+        label: impl Into<std::borrow::Cow<'a, str>> + 'a,
+        value: String,
+    ) -> Element<'a, Message> {
+        container(
+            row![
+                text::caption(label).width(cosmic::iced::Length::Fill),
+                text::caption(value),
+            ]
+            .align_y(cosmic::iced::core::Alignment::Center),
+        )
+        .padding([6, 12])
+        .into()
+    }
+
+    /// Appends a divider, a muted section label, then its rows. Callers skip
+    /// the call entirely when a section has no rows, so no empty heading or
+    /// dangling divider is left behind.
+    fn push_section<'a>(
+        content: &mut Vec<Element<'a, Message>>,
+        label: String,
+        rows: Vec<Element<'a, Message>>,
+    ) {
+        if rows.is_empty() {
+            return;
+        }
+        content.push(divider::horizontal::light().into());
+        content.push(
+            container(text::caption(label.to_uppercase()))
+                .padding([8, 12, 2, 12])
+                .into(),
+        );
+        content.extend(rows);
     }
 
     fn format_percentage(&self) -> String {
@@ -452,6 +523,9 @@ impl cosmic::Application for PowerMonitor {
                 self.time_to_full = data.time_to_full;
                 self.energy = data.energy;
                 self.energy_full = data.energy_full;
+                self.energy_full_design = data.energy_full_design;
+                self.cycle_count = data.cycle_count;
+                self.temperature = data.temperature;
                 self.no_battery = false;
                 self.batteries = data.batteries;
             }
@@ -463,6 +537,9 @@ impl cosmic::Application for PowerMonitor {
                 self.watts = 0.0;
                 self.percentage = 0.0;
                 self.status = String::new();
+                self.energy_full_design = None;
+                self.cycle_count = None;
+                self.temperature = None;
                 self.batteries = Vec::new();
             }
             Message::DisplayModeSelected(entity) => {
@@ -584,77 +661,76 @@ impl cosmic::Application for PowerMonitor {
             }
         }
 
-        content.push(divider::horizontal::default().into());
+        // Detail rows are grouped into POWER / BATTERY / HEALTH sections. The
+        // divider belongs to the section that follows it, so each section is
+        // pushed as [divider, label, rows...] and a section with nothing to
+        // show is skipped whole.
 
+        // POWER
+        let mut power_rows: Vec<Element<Message>> = Vec::new();
         if self.watts > 0.0 {
             let label = if self.status == "Charging" {
                 fl!("charge-rate")
             } else {
                 fl!("discharge-rate")
             };
-            content.push(
-                container(
-                    row![
-                        text::body(label).width(cosmic::iced::Length::Fill),
-                        text::body(Self::format_watts(self.watts)),
-                    ]
-                    .align_y(cosmic::iced::core::Alignment::Center),
-                )
-                .padding([6, 12])
-                .into(),
-            );
+            power_rows.push(Self::detail_row(label, Self::format_watts(self.watts)));
         }
+        power_rows.push(Self::detail_row(
+            fl!("energy-remaining"),
+            format!("{:.1} Wh", self.energy),
+        ));
+        Self::push_section(&mut content, fl!("section-power"), power_rows);
 
-        content.push(
-            container(
-                row![
-                    text::body(fl!("energy-remaining")).width(cosmic::iced::Length::Fill),
-                    text::body(format!("{:.1} Wh", self.energy)),
-                ]
-                .align_y(cosmic::iced::core::Alignment::Center),
-            )
-            .padding([6, 12])
-            .into(),
-        );
-
-        content.push(
-            container(
-                row![
-                    text::body(fl!("full-capacity")).width(cosmic::iced::Length::Fill),
-                    text::body(format!("{:.1} Wh", self.energy_full)),
-                ]
-                .align_y(cosmic::iced::core::Alignment::Center),
-            )
-            .padding([6, 12])
-            .into(),
-        );
-
+        // BATTERY
+        let mut battery_rows: Vec<Element<Message>> = vec![Self::detail_row(
+            fl!("full-capacity"),
+            format!("{:.1} Wh", self.energy_full),
+        )];
+        if let Some(design) = self
+            .energy_full_design
+            .filter(|design| *design > 0.0)
+        {
+            // Secondary to the values above, so it sits at caption weight.
+            battery_rows.push(Self::detail_row_secondary(
+                fl!("design-capacity"),
+                format!("{:.1} Wh", design),
+            ));
+        }
         if self.status == "Discharging" && self.time_to_empty > 0 {
-            content.push(
-                container(
-                    row![
-                        text::body(fl!("time-to-empty")).width(cosmic::iced::Length::Fill),
-                        text::body(Self::format_time(self.time_to_empty)),
-                    ]
-                    .align_y(cosmic::iced::core::Alignment::Center),
-                )
-                .padding([6, 12])
-                .into(),
-            );
+            battery_rows.push(Self::detail_row(
+                fl!("time-to-empty"),
+                Self::format_time(self.time_to_empty),
+            ));
         }
-
         if self.status == "Charging" && self.time_to_full > 0 {
-            content.push(
-                container(
-                    row![
-                        text::body(fl!("time-to-full")).width(cosmic::iced::Length::Fill),
-                        text::body(Self::format_time(self.time_to_full)),
-                    ]
-                    .align_y(cosmic::iced::core::Alignment::Center),
-                )
-                .padding([6, 12])
-                .into(),
-            );
+            battery_rows.push(Self::detail_row(
+                fl!("time-to-full"),
+                Self::format_time(self.time_to_full),
+            ));
+        }
+        Self::push_section(&mut content, fl!("section-battery"), battery_rows);
+
+        // HEALTH. Every row is optional, so the section only appears when at
+        // least one attribute was actually readable.
+        let mut health_rows: Vec<Element<Message>> = Vec::new();
+        if let Some(health) = self.health_percentage() {
+            health_rows.push(Self::detail_row(
+                fl!("battery-health"),
+                format!("{:.0}%", health),
+            ));
+        }
+        if let Some(temp) = self.temperature {
+            health_rows.push(Self::detail_row(
+                fl!("temperature"),
+                format!("{}{}", temp, fl!("degrees")),
+            ));
+        }
+        if let Some(cycles) = self.cycle_count {
+            health_rows.push(Self::detail_row(fl!("cycle-count"), format!("{cycles}")));
+        }
+        if !health_rows.is_empty() {
+            Self::push_section(&mut content, fl!("section-health"), health_rows);
         }
 
         self.core.applet.popup_container(column::with_children(content)).into()
@@ -695,5 +771,47 @@ impl cosmic::Application for PowerMonitor {
             });
 
         Subscription::batch(vec![battery, config])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    /// Builds the health inputs directly so the ratio can be checked against
+    /// the values real hardware reports.
+    fn health_for(energy_full: f64, design: Option<f64>) -> Option<f64> {
+        let design = design?;
+        if design <= 0.0 || energy_full <= 0.0 {
+            return None;
+        }
+        Some(energy_full / design * 100.0)
+    }
+
+    #[test]
+    fn health_is_one_hundred_when_full_matches_design() {
+        // BAT0 on this machine: energy_full == energy_full_design == 49.815 Wh
+        assert_eq!(health_for(49.815, Some(49.815)), Some(100.0));
+    }
+
+    #[test]
+    fn health_scales_down_with_capacity_loss() {
+        let h = health_for(39.83, Some(49.815)).unwrap();
+        assert!((h - 79.955).abs() < 0.01, "got {h}");
+    }
+
+    #[test]
+    fn health_is_none_without_design_capacity() {
+        assert_eq!(health_for(49.815, None), None);
+    }
+
+    #[test]
+    fn health_is_none_on_zero_design_capacity() {
+        assert_eq!(health_for(49.815, Some(0.0)), None);
+        assert_eq!(health_for(49.815, Some(-1.0)), None);
+    }
+
+    #[test]
+    fn health_is_none_on_zero_full_capacity() {
+        assert_eq!(health_for(0.0, Some(49.815)), None);
     }
 }

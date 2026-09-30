@@ -13,6 +13,12 @@ pub struct BatteryInfo {
     pub status: String,
     pub energy: f64,
     pub energy_full: f64,
+    /// Optional: not every driver exposes energy_full_design.
+    pub energy_full_design: Option<f64>,
+    /// Optional: kernel reports cycles as an integer, absent on many devices.
+    pub cycle_count: Option<u64>,
+    /// Optional: degrees C, the kernel reports tenths of a degree.
+    pub temperature: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -24,6 +30,9 @@ pub struct BatteryData {
     pub time_to_full: i64,
     pub energy: f64,
     pub energy_full: f64,
+    pub energy_full_design: Option<f64>,
+    pub cycle_count: Option<u64>,
+    pub temperature: Option<i64>,
     pub batteries: Vec<BatteryInfo>,
 }
 
@@ -54,6 +63,14 @@ fn read_battery_info(path: &Path) -> Result<BatteryInfo, String> {
         .unwrap_or(0.0);
     let energy_rate = read_power_watts(path).unwrap_or(0.0);
 
+    // Optional attributes. Never `?` these: a driver missing one of them must
+    // still report its battery, just without the values that depend on it.
+    let energy_full_design = read_energy_wh(path, "energy_full_design").ok();
+    let cycle_count = read_trimmed(path, "cycle_count")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    let temperature = read_f64(path, "temp").ok().map(|t| (t / 10.0) as i64);
+
     debug!(
         "poll: battery={} {:.1}% status={} rate={:.3}W energy={:.2}Wh full={:.2}Wh",
         path.display(),
@@ -71,6 +88,9 @@ fn read_battery_info(path: &Path) -> Result<BatteryInfo, String> {
         status,
         energy,
         energy_full,
+        energy_full_design,
+        cycle_count,
+        temperature,
     })
 }
 
@@ -110,6 +130,17 @@ pub async fn poll_batteries() -> Result<BatteryData, String> {
 
     let (time_to_empty, time_to_full) = estimate_times(&status, energy, energy_full, energy_rate);
 
+    // Design capacity only counts when every battery reports one, so a partial
+    // set never yields a health figure built on half the inputs.
+    let energy_full_design = infos.iter().try_fold(0.0, |acc, b| {
+        b.energy_full_design.map(|d| acc + d)
+    });
+
+    // These are per-device properties, not totals, so the first battery that
+    // reports one wins.
+    let cycle_count = infos.iter().find_map(|b| b.cycle_count);
+    let temperature = infos.iter().find_map(|b| b.temperature);
+
     Ok(BatteryData {
         energy_rate,
         percentage,
@@ -118,6 +149,9 @@ pub async fn poll_batteries() -> Result<BatteryData, String> {
         time_to_full,
         energy,
         energy_full,
+        energy_full_design,
+        cycle_count,
+        temperature,
         batteries: infos,
     })
 }

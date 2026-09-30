@@ -138,7 +138,9 @@ impl PowerMonitor {
     }
 
     /// A label/value row with the label filling the width, so every value in the
-    /// popup shares one right edge.
+    /// popup shares one right edge. The value carries more weight than its label
+    /// at the same size, so measurements read first without competing with the
+    /// percentage above them.
     fn detail_row<'a>(
         label: impl Into<std::borrow::Cow<'a, str>> + 'a,
         value: String,
@@ -146,11 +148,11 @@ impl PowerMonitor {
         container(
             row![
                 text::body(label).width(cosmic::iced::Length::Fill),
-                text::body(value),
+                text::body(value).font(cosmic::font::semibold()),
             ]
             .align_y(cosmic::iced::core::Alignment::Center),
         )
-        .padding([6, 12])
+        .padding([3, 12])
         .into()
     }
 
@@ -167,7 +169,7 @@ impl PowerMonitor {
             ]
             .align_y(cosmic::iced::core::Alignment::Center),
         )
-        .padding([6, 12])
+        .padding([3, 12])
         .into()
     }
 
@@ -185,7 +187,7 @@ impl PowerMonitor {
         content.push(divider::horizontal::light().into());
         content.push(
             container(text::caption(label.to_uppercase()))
-                .padding([8, 12, 2, 12])
+                .padding([6, 12, 1, 12])
                 .into(),
         );
         content.extend(rows);
@@ -355,23 +357,29 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
             cosmic::iced::Point::new(1.0, 1.0),
             cosmic::iced::Size::new(44.0, 30.0),
         );
-        let outline = Color::from_rgba(0.5, 0.5, 0.5, 0.5);
-
         let fill_color = battery_fill_color(self.percentage);
-        let fill_width = (body.width - 8.0) * self.percentage.clamp(0.0, 1.0);
-        if fill_width > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::new(4.0, 4.0),
-                cosmic::iced::Size::new(fill_width, body.height - 8.0),
-                fill_color,
-            );
-        }
 
-        frame.fill_rectangle(
-            cosmic::iced::Point::new(45.0, 11.0),
-            cosmic::iced::Size::new(3.0, 10.0),
-            outline,
-        );
+        // Solid body in the charge-state colour, matching the reference rather
+        // than an outlined shell with a partial inner fill. The bar under the
+        // status block still carries the exact level.
+        let body_path = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                body.position(),
+                body.size(),
+                cosmic::iced::border::Radius::from(4.0),
+            )
+        });
+        frame.fill(&body_path, fill_color);
+
+        // Terminal, same colour as the body so it reads as one shape.
+        let nub = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                cosmic::iced::Point::new(45.0, 11.0),
+                cosmic::iced::Size::new(3.0, 10.0),
+                cosmic::iced::border::Radius::from(1.0),
+            )
+        });
+        frame.fill(&nub, fill_color);
 
         if self.charging && self.percentage < 1.0 {
             let bolt = canvas::Path::new(|b| {
@@ -393,18 +401,6 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
                     .with_line_join(canvas::LineJoin::Round),
             );
         }
-
-        let body_path = canvas::Path::new(|b| {
-            b.rounded_rectangle(
-                body.position(),
-                body.size(),
-                cosmic::iced::border::Radius::from(4.0),
-            )
-        });
-        frame.stroke(
-            &body_path,
-            canvas::Stroke::default().with_width(2.0).with_color(outline),
-        );
 
         vec![frame.into_geometry()]
     }

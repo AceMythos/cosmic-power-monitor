@@ -367,10 +367,8 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
             cosmic::iced::Size::new(44.0, 30.0),
         );
         let fill_color = battery_fill_color(self.percentage);
+        let outline = Color::from_rgba(0.5, 0.5, 0.5, 0.5);
 
-        // Solid body in the charge-state colour, matching the reference rather
-        // than an outlined shell with a partial inner fill. The bar under the
-        // status block still carries the exact level.
         let body_path = canvas::Path::new(|b| {
             b.rounded_rectangle(
                 body.position(),
@@ -378,9 +376,30 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
                 cosmic::iced::border::Radius::from(4.0),
             )
         });
-        frame.fill(&body_path, fill_color);
 
-        // Terminal, same colour as the body so it reads as one shape.
+        // Fill proportionally so the icon reads as an actual level rather than
+        // only a colour band. The colour bands stay, so it still flags a low
+        // battery without having to compare it against the bar underneath.
+        let fill_width = (body.width - 8.0) * self.percentage.clamp(0.0, 1.0);
+        if fill_width > 0.0 {
+            // Clamp the corner radius to half the fill width: at a few percent
+            // charge the fill is under a pixel wide, and a fixed radius there is
+            // degenerate geometry that can render as a blob or drop out.
+            let fill_path = canvas::Path::new(|b| {
+                b.rounded_rectangle(
+                    cosmic::iced::Point::new(4.0, 4.0),
+                    cosmic::iced::Size::new(fill_width, body.height - 8.0),
+                    cosmic::iced::border::Radius::from(2.0_f32.min(fill_width / 2.0)),
+                )
+            });
+            frame.fill(&fill_path, fill_color);
+        }
+        frame.stroke(
+            &body_path,
+            canvas::Stroke::default().with_width(2.0).with_color(outline),
+        );
+
+        // Terminal, in the shell colour so it reads as part of the outline.
         let nub = canvas::Path::new(|b| {
             b.rounded_rectangle(
                 cosmic::iced::Point::new(45.0, 11.0),
@@ -388,7 +407,7 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
                 cosmic::iced::border::Radius::from(1.0),
             )
         });
-        frame.fill(&nub, fill_color);
+        frame.fill(&nub, outline);
 
         if self.charging && self.percentage < 1.0 {
             let bolt = canvas::Path::new(|b| {

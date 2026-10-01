@@ -90,14 +90,27 @@ pub enum Message {
 }
 
 impl PowerMonitor {
-    fn format_watts(w: f64) -> String {
+    /// Wattage at the precision the reading warrants: tenths above 1W,
+    /// hundredths above 0.1W, thousandths below that, so an idle battery does
+    /// not render a stream of zeros.
+    fn format_watts_value(w: f64) -> String {
         if w >= 1.0 {
-            format!("{:.1}W", w)
+            format!("{:.1}", w)
         } else if w >= 0.1 {
-            format!("{:.2}W", w)
+            format!("{:.2}", w)
         } else {
-            format!("{:.3}W", w)
+            format!("{:.3}", w)
         }
+    }
+
+    fn format_watts(w: f64) -> String {
+        format!("{}W", Self::format_watts_value(w))
+    }
+
+    /// Same value with a space before the unit, for the popup status line where
+    /// the wattage reads on its own rather than inside a panel estimate.
+    fn format_watts_labeled(w: f64) -> String {
+        format!("{} W", Self::format_watts_value(w))
     }
 
     fn format_power_string(&self, watts: f64, with_time: bool) -> String {
@@ -156,41 +169,37 @@ impl PowerMonitor {
         .into()
     }
 
-    /// Same alignment as [`Self::detail_row`] but at caption weight, for values
-    /// that should not compete with the primary measurements.
-    fn detail_row_secondary<'a>(
-        label: impl Into<std::borrow::Cow<'a, str>> + 'a,
-        value: String,
-    ) -> Element<'a, Message> {
-        container(
-            row![
-                text::caption(label).width(cosmic::iced::Length::Fill),
-                text::caption(value),
-            ]
-            .align_y(cosmic::iced::core::Alignment::Center),
-        )
-        .padding([3, 12])
-        .into()
-    }
-
-    /// Appends a divider, a muted section label, then its rows. Callers skip
-    /// the call entirely when a section has no rows, so no empty heading or
-    /// dangling divider is left behind.
+    /// Appends one rounded card holding a bold section title and its rows, with
+    /// a hairline between each row. Callers skip the call entirely when a
+    /// section has no rows, so no empty card is left behind.
     fn push_section<'a>(
-        content: &mut Vec<Element<'a, Message>>,
+        sections: &mut Vec<Element<'a, Message>>,
         label: String,
         rows: Vec<Element<'a, Message>>,
     ) {
         if rows.is_empty() {
             return;
         }
-        content.push(divider::horizontal::light().into());
-        content.push(
-            container(text::caption(label.to_uppercase()))
-                .padding([6, 12, 1, 12])
+
+        let mut block: Vec<Element<'a, Message>> = Vec::with_capacity(rows.len() * 2);
+        block.push(
+            container(text::body(label).font(cosmic::font::semibold()))
+                .padding([10, 12, 8, 12])
                 .into(),
         );
-        content.extend(rows);
+        block.push(divider::horizontal::light().into());
+        for (index, row) in rows.into_iter().enumerate() {
+            if index > 0 {
+                block.push(divider::horizontal::light().into());
+            }
+            block.push(row);
+        }
+
+        sections.push(
+            container(column::with_children(block).spacing(0))
+                .class(cosmic::theme::Container::Card)
+                .into(),
+        );
     }
 
     fn format_percentage(&self) -> String {
@@ -603,37 +612,50 @@ impl cosmic::Application for PowerMonitor {
         .width(Length::Fixed(48.0))
         .height(Length::Fixed(32.0));
 
-        content.push(
-            container(
-                row![
-                    battery_icon,
-                    column![
-                        text::title1(format!("{:.0}%", self.percentage)),
-                        text::caption(localize_status(&self.status)),
-                    ]
-                    .spacing(0),
-                ]
-                .spacing(12)
-                .align_y(cosmic::iced::core::Alignment::Center),
-            )
-            .padding([12, 12, 4, 12])
-            .into(),
-        );
+        // The status line carries the live wattage too, so the reading is visible
+        // without opening a section for it. A battery idling at a charge
+        // threshold reports 0W indefinitely, so only show it when there is a
+        // real draw.
+        let status_line = match self.watts > 0.0 {
+            true => format!(
+                "{} \u{b7} {}",
+                localize_status(&self.status),
+                Self::format_watts_labeled(self.watts)
+            ),
+            false => localize_status(&self.status),
+        };
 
-        content.push(
+        // Everything below the divider shares one horizontal gutter, so the
+        // header card and the section cards line up on both edges.
+        let mut body: Vec<Element<Message>> = Vec::new();
+
+        body.push(
             container(
-                canvas::Canvas::<BatteryBar, Message, Theme>::new(BatteryBar {
-                    percentage: (self.percentage / 100.0) as f32,
-                })
-                .width(Length::Fill)
-                .height(Length::Fixed(4.0)),
+                column![
+                    row![
+                        battery_icon,
+                        column![
+                            text::title1(format!("{:.0}%", self.percentage)),
+                            text::caption(status_line),
+                        ]
+                        .spacing(0),
+                    ]
+                    .spacing(12)
+                    .align_y(cosmic::iced::core::Alignment::Center),
+                    canvas::Canvas::<BatteryBar, Message, Theme>::new(BatteryBar {
+                        percentage: (self.percentage / 100.0) as f32,
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fixed(4.0)),
+                ]
+                .spacing(10),
             )
-            .padding([4, 12, 12, 12])
+            .padding([12, 12, 12, 12])
+            .class(cosmic::theme::Container::Card)
             .into(),
         );
 
         if self.batteries.len() > 1 {
-            content.push(divider::horizontal::default().into());
             for b in &self.batteries {
                 let watts_str = if b.energy_rate > 0.0 {
                     let sign = if b.status == "Charging" { "+" } else { "-" };
@@ -641,7 +663,7 @@ impl cosmic::Application for PowerMonitor {
                 } else {
                     String::new()
                 };
-                content.push(
+                body.push(
                     container(
                         text::body(format!(
                             "{}  {:.0}%  {}{}",
@@ -657,38 +679,20 @@ impl cosmic::Application for PowerMonitor {
             }
         }
 
-        // Detail rows are grouped into POWER / BATTERY / HEALTH sections. The
-        // divider belongs to the section that follows it, so each section is
-        // pushed as [divider, label, rows...] and a section with nothing to
-        // show is skipped whole.
-
-        // POWER
-        let mut power_rows: Vec<Element<Message>> = Vec::new();
-        if self.watts > 0.0 {
-            let label = if self.status == "Charging" {
-                fl!("charge-rate")
-            } else {
-                fl!("discharge-rate")
-            };
-            power_rows.push(Self::detail_row(label, Self::format_watts(self.watts)));
-        }
-        power_rows.push(Self::detail_row(
-            fl!("energy-remaining"),
-            format!("{:.1} Wh", self.energy),
-        ));
-        Self::push_section(&mut content, fl!("section-power"), power_rows);
+        // Detail rows are grouped into BATTERY / HEALTH cards. A section with
+        // nothing to show is skipped whole, so no empty card is left behind.
+        let mut sections: Vec<Element<Message>> = Vec::new();
 
         // BATTERY
-        let mut battery_rows: Vec<Element<Message>> = vec![Self::detail_row(
-            fl!("full-capacity"),
-            format!("{:.1} Wh", self.energy_full),
-        )];
+        let mut battery_rows: Vec<Element<Message>> = vec![
+            Self::detail_row(fl!("energy-remaining"), format!("{:.1} Wh", self.energy)),
+            Self::detail_row(fl!("full-capacity"), format!("{:.1} Wh", self.energy_full)),
+        ];
         if let Some(design) = self
             .energy_full_design
             .filter(|design| *design > 0.0)
         {
-            // Secondary to the values above, so it sits at caption weight.
-            battery_rows.push(Self::detail_row_secondary(
+            battery_rows.push(Self::detail_row(
                 fl!("design-capacity"),
                 format!("{:.1} Wh", design),
             ));
@@ -705,7 +709,7 @@ impl cosmic::Application for PowerMonitor {
                 Self::format_time(self.time_to_full),
             ));
         }
-        Self::push_section(&mut content, fl!("section-battery"), battery_rows);
+        Self::push_section(&mut sections, fl!("section-battery"), battery_rows);
 
         // HEALTH. Every row is optional, so the section only appears when at
         // least one attribute was actually readable.
@@ -726,8 +730,16 @@ impl cosmic::Application for PowerMonitor {
             health_rows.push(Self::detail_row(fl!("cycle-count"), format!("{cycles}")));
         }
         if !health_rows.is_empty() {
-            Self::push_section(&mut content, fl!("section-health"), health_rows);
+            Self::push_section(&mut sections, fl!("section-health"), health_rows);
         }
+
+        body.push(container(column::with_children(sections).spacing(8)).into());
+
+        content.push(
+            container(column::with_children(body).spacing(8))
+                .padding([0, 12, 12, 12])
+                .into(),
+        );
 
         self.core.applet.popup_container(column::with_children(content)).into()
     }

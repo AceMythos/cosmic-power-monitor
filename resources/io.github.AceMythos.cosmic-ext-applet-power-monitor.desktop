@@ -1,11 +1,14 @@
 [Desktop Entry]
 Name=Power Monitor
+Name[pl]=Monitor Mocy
 Comment=Battery watts on your panel
+Comment[pl]=Podgląd Baterii na Twoim panelu
 Type=Application
 Exec=cosmic-power-monitor
 Terminal=false
 Categories=Utility;X-COSMIC;
 Keywords=COSMIC;Power;Battery;Watts;
+Keywords=COSMIC;Moc;Bateria;Waty;Pobór;Zasilanie;
 Icon=io.github.AceMythos.cosmic-ext-applet-power-monitor
 StartupNotify=true
 NoDisplay=true

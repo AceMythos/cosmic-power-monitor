@@ -38,3 +38,21 @@ pub fn localize() {
         eprintln!("Error while loading language for cosmic-power-monitor: {error}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn polish_locale_is_available_and_parses() {
+        let loader: FluentLanguageLoader = fluent_language_loader!();
+        let pl = "pl".parse().expect("valid language identifier");
+        let selected = i18n_embed::select(&loader, &Localizations, &[pl])
+            .expect("polish should be available and parse");
+        assert_eq!(selected[0].to_string(), "pl");
+        assert!(
+            selected.iter().any(|language| language.to_string() == "en"),
+            "english fallback should be loaded after polish"
+        );
+    }
+}

@@ -4,20 +4,31 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>Power Monitor</name>
+  <name xml:lang="pl">Monitor Mocy</name>
   <summary>Battery watts on your panel</summary>
+  <summary xml:lang="pl">Podgląd Baterii na Twoim panelu</summary>
   <description>
     <p>
       Shows your laptop's battery draw in watts right on the COSMIC panel. Reads
       from /sys/class/power_supply directly — no daemon, no extra overhead.
       Updates about 4 times a second.
     </p>
+    <p xml:lang="pl">
+      Pokazuje pobór mocy baterii laptopa w watach bezpośrednio na panelu COSMIC. Odczyt z /sys/class/power_supply - żadnych daemonów, żadnego narzutu. Odświeża się 4 razy na sekundę.
+    </p>
     <p>Click the reading for the full picture:</p>
+    <p xml:lang="pl">Kliknij by zobaczyć całościowy obraz:</p>
     <ul>
       <li>Current charge percentage</li>
+      <li xml:lang="pl">Obecne naładowanie w procentach</li>
       <li>Charging or discharging status</li>
+      <li xml:lang="pl">Status ładowania lub rozładowywania</li>
       <li>Charge/discharge rate in watts</li>
+      <li xml:lang="pl">Ładowanie/Rozładowywanie w watach</li>
       <li>Total energy capacity and current level</li>
+      <li xml:lang="pl">Pełna pojemność i jej obecny poziom</li>
       <li>Estimated time remaining</li>
+      <li xml:lang="pl">Szacunkowy czas do rozładowania</li>
     </ul>
   </description>
   <icon type="stock">io.github.AceMythos.cosmic-ext-applet-power-monitor.svg</icon>
@@ -29,10 +40,12 @@
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/charge.png</image>
       <caption>Power draw showing on the panel while charging</caption>
+      <caption xml:lang="pl">Pobór prądu pokazany na panelu podczas ładowania</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/AceMythos/cosmic-power-monitor/main/screenshots/discharge.png</image>
       <caption>Power draw showing on the panel while discharging</caption>
+      <caption xml:lang="pl">Pobór prądu pokazany na panelu podczas rozładowywania</caption>
     </screenshot>
   </screenshots>
   <url type="homepage">https://github.com/AceMythos/cosmic-power-monitor</url>

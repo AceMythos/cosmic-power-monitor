@@ -51,7 +51,7 @@ mod tests {
             .expect("polish should be available and parse");
         assert_eq!(selected[0].to_string(), "pl");
         assert!(
-            selected.iter().any(|language| language.to_string() == "en"),
+            selected.iter().any(|language| language.language == "en"),
             "english fallback should be loaded after polish"
         );
     }

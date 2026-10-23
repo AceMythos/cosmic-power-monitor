@@ -52,7 +52,7 @@ Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel
 
 ## How the reading works
 
-The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It includes every device the kernel reports as `type=Battery` and sums their energy and power, so peripheral batteries count toward the total. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
+The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It includes every device the kernel reports as `type=Battery` that exposes a battery reading (`capacity`, `energy_now`, or `charge_now`), and sums their energy and power, so peripheral batteries count toward the total. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
 The number is battery charge/discharge power, not total system draw. The label shows `—` when no rate is available, `✓ Full` when fully charged, and `Stopped` when the battery reports no power while charging or not charging. The applet polls every 250ms.
 

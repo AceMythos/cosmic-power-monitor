@@ -10,6 +10,7 @@ use cosmic::widget::{
 };
 use cosmic::{Action, Element, Task, Theme};
 use cosmic::iced::Color;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,117 @@ const EMPTY_LABEL: &str = "—";
 const FAST_POLL_MS: u64 = 250;
 const SLOW_POLL_MS: u64 = 5_000;
 
+/// How much battery-power history the popup trend covers.
+const HISTORY_WINDOW: Duration = Duration::from_secs(30 * 60);
+/// A chart needs more than two samples right after launch; hold the message
+/// until there is at least half a minute of real data.
+const TREND_MIN_SPAN: Duration = Duration::from_secs(30);
+const TREND_BUCKETS: usize = 48;
+
+/// A bounded ring of battery-power samples. The popup renders this, never a
+/// fabricated waveform: empty buckets stay empty and the card shows a
+/// collecting message until there is real data.
+#[derive(Default)]
+struct PowerHistory {
+    samples: VecDeque<(Instant, f32)>,
+}
+
+impl PowerHistory {
+    fn push(&mut self, at: Instant, watts: f64) {
+        let cutoff = at.checked_sub(HISTORY_WINDOW).unwrap_or(at);
+
+        let value = if watts.is_finite() {
+            watts.abs() as f32
+        } else {
+            0.0
+        };
+        self.samples.push_back((at, value));
+
+        while self
+            .samples
+            .front()
+            .is_some_and(|(sample_at, _)| *sample_at < cutoff)
+        {
+            self.samples.pop_front();
+        }
+    }
+
+    fn clear(&mut self) {
+        self.samples.clear();
+    }
+
+    fn span(&self, now: Instant) -> Duration {
+        let Some((first, _)) = self.samples.front() else {
+            return Duration::ZERO;
+        };
+        now.saturating_duration_since(*first).min(HISTORY_WINDOW)
+    }
+
+    /// Average and peak from the raw samples, not from the downsampled chart
+    /// buckets: a short spike must not disappear behind a bucket average.
+    fn stats(&self, now: Instant) -> Option<(f32, f32)> {
+        let (first, _) = self.samples.front()?;
+        let cutoff = now.checked_sub(HISTORY_WINDOW).unwrap_or(now);
+        let start = (*first).max(cutoff);
+
+        let mut sum = 0.0_f32;
+        let mut count = 0_u32;
+        let mut peak = 0.0_f32;
+        for (at, value) in &self.samples {
+            if *at < start || *at > now {
+                continue;
+            }
+            sum += *value;
+            count += 1;
+            peak = peak.max(*value);
+        }
+
+        (count > 0).then(|| (sum / count as f32, peak))
+    }
+
+    fn points(&self, now: Instant, buckets: usize) -> Vec<Option<f32>> {
+        let Some((first, _)) = self.samples.front() else {
+            return Vec::new();
+        };
+        if buckets == 0 || self.samples.len() < 2 {
+            return Vec::new();
+        }
+
+        let cutoff = now.checked_sub(HISTORY_WINDOW).unwrap_or(now);
+        let start = (*first).max(cutoff);
+        let span = now.saturating_duration_since(start);
+        if span < TREND_MIN_SPAN {
+            return Vec::new();
+        }
+
+        let bucket_span = span.as_secs_f32() / buckets as f32;
+        if bucket_span <= 0.0 {
+            return Vec::new();
+        }
+
+        let mut sums = vec![0.0_f32; buckets];
+        let mut counts = vec![0_u32; buckets];
+        for (at, value) in &self.samples {
+            if *at < start || *at > now {
+                continue;
+            }
+            let offset = (*at).saturating_duration_since(start).as_secs_f32();
+            let index = ((offset / bucket_span).floor() as usize).min(buckets - 1);
+            sums[index] += *value;
+            counts[index] += 1;
+        }
+
+        if !counts.iter().any(|count| *count > 0) {
+            return Vec::new();
+        }
+
+        sums.into_iter()
+            .zip(counts)
+            .map(|(sum, count)| (count > 0).then(|| sum / count as f32))
+            .collect()
+    }
+}
+
 pub struct PowerMonitor {
     core: Core,
     popup: Option<Id>,
@@ -44,12 +156,13 @@ pub struct PowerMonitor {
     energy_full: f64,
     energy_full_design: Option<f64>,
     cycle_count: Option<u64>,
-    temperature: Option<i64>,
+    temperature: Option<f64>,
     no_battery: bool,
     config: PowerMonitorConfig,
     config_handler: Option<Config>,
     display_modes: segmented_button::SingleSelectModel,
     batteries: Vec<battery::BatteryInfo>,
+    history: PowerHistory,
 }
 
 impl Default for PowerMonitor {
@@ -75,6 +188,7 @@ impl Default for PowerMonitor {
             config_handler: None,
             display_modes: segmented_button::SingleSelectModel::default(),
             batteries: Vec::new(),
+            history: PowerHistory::default(),
         }
     }
 }
@@ -163,6 +277,7 @@ impl PowerMonitor {
                 text::body(label).width(cosmic::iced::Length::Fill),
                 text::body(value).font(cosmic::font::semibold()),
             ]
+            .spacing(8)
             .align_y(cosmic::iced::core::Alignment::Center),
         )
         .padding([3, 12])
@@ -200,6 +315,308 @@ impl PowerMonitor {
                 .class(cosmic::theme::Container::Card)
                 .into(),
         );
+    }
+
+    fn panel_footer(&self) -> Element<'_, Message> {
+        column![
+            divider::horizontal::default(),
+            container(
+                column![
+                    text::caption(fl!("panel-display")),
+                    segmented_control::horizontal(&self.display_modes)
+                        .on_activate(Message::DisplayModeSelected),
+                ]
+                .spacing(6),
+            )
+            .padding([10, 12, 12, 12]),
+        ]
+        .into()
+    }
+
+    fn trend_card(
+        &self,
+        points: &[Option<f32>],
+        span: Duration,
+        now: Instant,
+    ) -> Element<'_, Message> {
+        let values: Vec<f32> = points.iter().flatten().copied().collect();
+        let stats = self.history.stats(now);
+        let window_label = if span >= HISTORY_WINDOW || span.is_zero() {
+            fl!("trend-window")
+        } else {
+            Self::format_time(span.as_secs() as i64)
+        };
+        let summary = stats
+            .map(|(avg, peak)| {
+                format!(
+                    "{} {avg:.1} W  {} {peak:.1} W",
+                    fl!("trend-average"),
+                    fl!("trend-peak")
+                )
+            })
+            .unwrap_or_default();
+
+        let mut card = column![
+            row![
+                text::body(fl!("trend-title")).font(cosmic::font::semibold()),
+                container(text::caption(window_label))
+                    .width(Length::Fill)
+                    .align_x(cosmic::iced::core::Alignment::End),
+            ]
+            .align_y(cosmic::iced::core::Alignment::Center),
+        ]
+        .spacing(6);
+
+        if values.len() >= 2 {
+            card = card.push(
+                canvas::Canvas::<TrendChart, Message, Theme>::new(TrendChart {
+                    points: points.to_vec(),
+                    charging: self.status == "Charging",
+                })
+                .width(Length::Fill)
+                .height(Length::Fixed(56.0)),
+            );
+            card = card.push(
+                row![
+                    text::caption(format!(
+                        "{} {}",
+                        fl!("trend-now"),
+                        Self::format_watts_labeled(self.watts.abs())
+                    )),
+                    container(text::caption(summary))
+                        .width(Length::Fill)
+                        .align_x(cosmic::iced::core::Alignment::End),
+                ]
+                .align_y(cosmic::iced::core::Alignment::Center),
+            );
+        } else {
+            card = card.push(
+                container(text::caption(fl!("trend-collecting")))
+                    .width(Length::Fill)
+                    .padding([18, 0]),
+            );
+        }
+
+        container(card)
+            .padding(12)
+            .class(cosmic::theme::Container::Card)
+            .into()
+    }
+
+    fn popup_body(&self) -> Vec<Element<'_, Message>> {
+        let mut content: Vec<Element<Message>> = Vec::new();
+
+        if self.no_battery {
+            content.push(
+                container(
+                    column![
+                        text::title3(fl!("no-battery")),
+                        text::caption(fl!("no-battery-caption")),
+                    ]
+                    .spacing(4)
+                    .align_x(cosmic::iced::core::Alignment::Center),
+                )
+                .padding([32, 12])
+                .width(Length::Fill)
+                .into(),
+            );
+            content.push(self.panel_footer());
+            return content;
+        }
+
+        let battery_icon = canvas::Canvas::<BatteryIcon, Message, Theme>::new(BatteryIcon {
+            percentage: (self.percentage / 100.0) as f32,
+            charging: self.status == "Charging",
+        })
+        .width(Length::Fixed(48.0))
+        .height(Length::Fixed(32.0));
+
+        let mut status_parts = vec![localize_status(&self.status)];
+        if self.watts > 0.0 {
+            let sign = match self.status.as_str() {
+                "Charging" => "+",
+                "Discharging" => "-",
+                _ => "",
+            };
+            status_parts.push(format!(
+                "{}{}",
+                sign,
+                Self::format_watts_labeled(self.watts.abs())
+            ));
+        }
+        let time = if self.status == "Discharging" {
+            self.time_to_empty
+        } else if self.status == "Charging" {
+            self.time_to_full
+        } else {
+            0
+        };
+        if time > 0 {
+            status_parts.push(Self::format_time(time));
+        }
+        let status_line = status_parts.join(" \u{b7} ");
+
+        let mut body: Vec<Element<Message>> = Vec::new();
+
+        body.push(
+            container(
+                column![
+                    row![
+                        battery_icon,
+                        column![
+                            text::title1(format!("{:.0}%", self.percentage)),
+                            text::caption(status_line),
+                        ]
+                        .spacing(0),
+                    ]
+                    .spacing(12)
+                    .align_y(cosmic::iced::core::Alignment::Center),
+                    canvas::Canvas::<BatteryBar, Message, Theme>::new(BatteryBar {
+                        percentage: (self.percentage / 100.0) as f32,
+                    })
+                    .width(Length::Fill)
+                    .height(Length::Fixed(4.0)),
+                ]
+                .spacing(10),
+            )
+            .padding(12)
+            .class(cosmic::theme::Container::Card)
+            .into(),
+        );
+
+        let now = Instant::now();
+        let points = self.history.points(now, TREND_BUCKETS);
+        let span = self.history.span(now);
+        body.push(self.trend_card(&points, span, now));
+
+        let mut sections: Vec<Element<Message>> = Vec::new();
+
+        if self.batteries.len() > 1 {
+            let mut battery_rows: Vec<Element<Message>> = Vec::new();
+            for b in &self.batteries {
+                let status = if b.energy_rate > 0.0 {
+                    let sign = if b.status == "Charging" { "+" } else { "-" };
+                    format!(
+                        "{} \u{b7} {}{}",
+                        localize_status(&b.status),
+                        sign,
+                        Self::format_watts_labeled(b.energy_rate)
+                    )
+                } else {
+                    localize_status(&b.status)
+                };
+                battery_rows.push(
+                    container(
+                        column![
+                            row![
+                                text::body(&b.name).font(cosmic::font::semibold()),
+                                container(text::caption(format!("{:.0}%", b.percentage)))
+                                    .width(Length::Fill)
+                                    .align_x(cosmic::iced::core::Alignment::End),
+                            ]
+                            .align_y(cosmic::iced::core::Alignment::Center),
+                            canvas::Canvas::<MiniBar, Message, Theme>::new(MiniBar {
+                                percentage: (b.percentage / 100.0) as f32,
+                            })
+                            .width(Length::Fill)
+                            .height(Length::Fixed(5.0)),
+                            text::caption(status),
+                        ]
+                        .spacing(5),
+                    )
+                    .padding([8, 12])
+                    .into(),
+                );
+            }
+            Self::push_section(&mut sections, fl!("batteries"), battery_rows);
+        }
+
+        let mut battery_rows: Vec<Element<Message>> = vec![
+            Self::detail_row(fl!("energy-remaining"), format!("{:.1} Wh", self.energy)),
+            Self::detail_row(fl!("full-capacity"), format!("{:.1} Wh", self.energy_full)),
+        ];
+        if let Some(design) = self.energy_full_design.filter(|design| *design > 0.0) {
+            battery_rows.push(Self::detail_row(
+                fl!("design-capacity"),
+                format!("{:.1} Wh", design),
+            ));
+        }
+        if self.status == "Discharging" && self.time_to_empty > 0 {
+            battery_rows.push(Self::detail_row(
+                fl!("time-to-empty"),
+                Self::format_time(self.time_to_empty),
+            ));
+        }
+        if self.status == "Charging" && self.time_to_full > 0 {
+            battery_rows.push(Self::detail_row(
+                fl!("time-to-full"),
+                Self::format_time(self.time_to_full),
+            ));
+        }
+        Self::push_section(&mut sections, fl!("section-battery"), battery_rows);
+
+        let mut health_rows: Vec<Element<Message>> = Vec::new();
+        if self.batteries.len() == 2 {
+            // The card title already localizes "Health"; names in the row keep
+            // this value on one line at 360px in every locale.
+            let health: Vec<(&str, f64)> = self
+                .batteries
+                .iter()
+                .filter_map(|b| {
+                    b.health_percentage()
+                        .map(|health| (b.name.as_str(), health))
+                })
+                .collect();
+            if !health.is_empty() {
+                let names = health
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let values = health
+                    .iter()
+                    .map(|(_, health)| format!("{:.0}%", health))
+                    .collect::<Vec<_>>()
+                    .join("/");
+                health_rows.push(Self::detail_row(names, values));
+            }
+        } else if self.batteries.len() > 2 {
+            for b in &self.batteries {
+                if let Some(health) = b.health_percentage() {
+                    health_rows.push(Self::detail_row(
+                        b.name.as_str(),
+                        format!("{:.0}%", health),
+                    ));
+                }
+            }
+        } else if let Some(health) = self.health_percentage() {
+            health_rows.push(Self::detail_row(
+                fl!("battery-health"),
+                format!("{:.0}%", health),
+            ));
+        }
+        if let Some(temp) = self.temperature {
+            health_rows.push(Self::detail_row(
+                fl!("temperature"),
+                Self::format_temperature(temp),
+            ));
+        }
+        if let Some(cycles) = self.cycle_count {
+            health_rows.push(Self::detail_row(fl!("cycle-count"), format!("{cycles}")));
+        }
+        if !health_rows.is_empty() {
+            Self::push_section(&mut sections, fl!("section-health"), health_rows);
+        }
+
+        body.push(container(column::with_children(sections).spacing(8)).into());
+
+        content.push(
+            container(column::with_children(body).spacing(8))
+                .padding([12, 12, 0, 12])
+                .into(),
+        );
+        content.push(self.panel_footer());
+        content
     }
 
     fn format_percentage(&self) -> String {
@@ -278,6 +695,21 @@ impl PowerMonitor {
             format!("{}{}", seconds, fl!("seconds"))
         }
     }
+
+    fn format_temperature(temp: f64) -> String {
+        format!("{temp:.1}{}", fl!("degrees"))
+    }
+}
+
+fn poll_task() -> Task<Action<Message>> {
+    Task::perform(battery::poll_batteries(), |result| match result {
+        Ok(data) => Message::Update(data),
+        Err(e) => {
+            log::debug!("battery poll failed: {e}");
+            Message::NoBattery
+        }
+    })
+    .map(Action::App)
 }
 
 /// The kernel reports a fixed set of status strings. Name the ones we know how
@@ -292,14 +724,34 @@ fn localize_status(status: &str) -> String {
     }
 }
 
-fn battery_fill_color(pct: f32) -> Color {
-    if pct > 0.6 {
-        Color::from_rgb(0.3, 0.8, 0.3)
-    } else if pct > 0.2 {
-        Color::from_rgb(0.9, 0.6, 0.1)
+fn battery_fill_color(theme: &Theme, pct: f32) -> Color {
+    if pct > 0.20 {
+        theme.cosmic().success_color().into()
+    } else if pct > 0.10 {
+        theme.cosmic().warning_color().into()
     } else {
-        Color::from_rgb(0.8, 0.2, 0.2)
+        theme.cosmic().destructive_color().into()
     }
+}
+
+fn battery_on_color(theme: &Theme, pct: f32) -> Color {
+    if pct > 0.20 {
+        theme.cosmic().on_success_color().into()
+    } else if pct > 0.10 {
+        theme.cosmic().on_warning_color().into()
+    } else {
+        theme.cosmic().on_destructive_color().into()
+    }
+}
+
+fn battery_track_color(theme: &Theme) -> Color {
+    let divider: Color = theme.cosmic().background(theme.transparent).divider.into();
+    Color::from_rgba(divider.r, divider.g, divider.b, 0.25)
+}
+
+fn battery_outline_color(theme: &Theme) -> Color {
+    let divider: Color = theme.cosmic().background(theme.transparent).divider.into();
+    Color::from_rgba(divider.r, divider.g, divider.b, 0.65)
 }
 
 struct BatteryBar {
@@ -313,7 +765,7 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryBar {
         &self,
         _state: &(),
         renderer: &cosmic::iced::Renderer,
-        _theme: &Theme,
+        theme: &Theme,
         bounds: cosmic::iced::Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
@@ -321,23 +773,28 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryBar {
 
         let width = bounds.width;
         let height = bounds.height;
-        let fill_width = width * self.percentage;
+        let radius = height / 2.0;
+        let percentage = self.percentage.clamp(0.0, 1.0);
+        let fill_width = width * percentage;
 
-        let track_color = Color::from_rgba(0.5, 0.5, 0.5, 0.15);
-        frame.fill_rectangle(
-            cosmic::iced::Point::new(0.0, 0.0),
-            cosmic::iced::Size::new(width, height),
-            track_color,
-        );
-
-        let fill_color = battery_fill_color(self.percentage);
+        let track = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                cosmic::iced::Point::new(0.0, 0.0),
+                cosmic::iced::Size::new(width, height),
+                cosmic::iced::border::Radius::from(radius),
+            )
+        });
+        frame.fill(&track, battery_track_color(theme));
 
         if fill_width > 0.0 {
-            frame.fill_rectangle(
-                cosmic::iced::Point::new(0.0, 0.0),
-                cosmic::iced::Size::new(fill_width, height),
-                fill_color,
-            );
+            let fill = canvas::Path::new(|b| {
+                b.rounded_rectangle(
+                    cosmic::iced::Point::new(0.0, 0.0),
+                    cosmic::iced::Size::new(fill_width, height),
+                    cosmic::iced::border::Radius::from(radius.min(fill_width / 2.0)),
+                )
+            });
+            frame.fill(&fill, battery_fill_color(theme, percentage));
         }
 
         vec![frame.into_geometry()]
@@ -356,7 +813,7 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
         &self,
         _state: &(),
         renderer: &cosmic::iced::Renderer,
-        _theme: &Theme,
+        theme: &Theme,
         bounds: cosmic::iced::Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
@@ -366,8 +823,8 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
             cosmic::iced::Point::new(1.0, 1.0),
             cosmic::iced::Size::new(44.0, 30.0),
         );
-        let fill_color = battery_fill_color(self.percentage);
-        let outline = Color::from_rgba(0.5, 0.5, 0.5, 0.5);
+        let fill_color = battery_fill_color(theme, self.percentage.clamp(0.0, 1.0));
+        let outline = battery_outline_color(theme);
 
         let body_path = canvas::Path::new(|b| {
             b.rounded_rectangle(
@@ -419,7 +876,7 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
                 b.line_to(cosmic::iced::Point::new(20.5, 13.6));
                 b.close();
             });
-            let bolt_color = Color::from_rgba(1.0, 1.0, 1.0, 1.0);
+            let bolt_color = battery_on_color(theme, self.percentage.clamp(0.0, 1.0));
             frame.fill(&bolt, bolt_color);
             frame.stroke(
                 &bolt,
@@ -428,6 +885,214 @@ impl canvas::Program<Message, cosmic::Theme> for BatteryIcon {
                     .with_color(bolt_color)
                     .with_line_join(canvas::LineJoin::Round),
             );
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+struct MiniBar {
+    percentage: f32,
+}
+
+impl canvas::Program<Message, cosmic::Theme> for MiniBar {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::iced::Renderer,
+        theme: &Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let width = bounds.width;
+        let height = bounds.height;
+        let radius = height / 2.0;
+        let percentage = self.percentage.clamp(0.0, 1.0);
+
+        let track = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                cosmic::iced::Point::new(0.0, 0.0),
+                cosmic::iced::Size::new(width, height),
+                cosmic::iced::border::Radius::from(radius),
+            )
+        });
+        frame.fill(&track, battery_track_color(theme));
+
+        let fill_width = width * percentage;
+        if fill_width > 0.0 {
+            let fill = canvas::Path::new(|b| {
+                b.rounded_rectangle(
+                    cosmic::iced::Point::new(0.0, 0.0),
+                    cosmic::iced::Size::new(fill_width, height),
+                    cosmic::iced::border::Radius::from(radius.min(fill_width / 2.0)),
+                )
+            });
+            frame.fill(&fill, battery_fill_color(theme, percentage));
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+struct TrendChart {
+    points: Vec<Option<f32>>,
+    charging: bool,
+}
+
+impl canvas::Program<Message, cosmic::Theme> for TrendChart {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::iced::Renderer,
+        theme: &Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let available: Vec<(usize, f32)> = self
+            .points
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.map(|value| (index, value)))
+            .collect();
+        if available.len() < 2 {
+            return vec![frame.into_geometry()];
+        }
+
+        let width = bounds.width;
+        let height = bounds.height;
+        let pad = 2.0;
+        let mut min = f32::INFINITY;
+        let mut max = f32::NEG_INFINITY;
+        for (_, value) in &available {
+            min = min.min(*value);
+            max = max.max(*value);
+        }
+        let min = (min - 1.0).max(0.0);
+        let max = max + 1.0;
+        let span = (max - min).max(1.0);
+
+        let last_index = (self.points.len() - 1) as f32;
+        let x_at = |index: usize| pad + (index as f32 / last_index) * (width - pad * 2.0);
+        let y_at = |value: f32| height - pad - ((value - min) / span) * (height - pad * 2.0);
+
+        let accent: Color = if self.charging {
+            theme.cosmic().success_color().into()
+        } else {
+            theme.cosmic().accent_color().into()
+        };
+        let area_color = Color::from_rgba(accent.r, accent.g, accent.b, 0.18);
+
+        let area = canvas::Path::new(|b| {
+            b.move_to(cosmic::iced::Point::new(
+                x_at(available[0].0),
+                height - pad,
+            ));
+            for (index, value) in &available {
+                b.line_to(cosmic::iced::Point::new(x_at(*index), y_at(*value)));
+            }
+            b.line_to(cosmic::iced::Point::new(
+                x_at(available[available.len() - 1].0),
+                height - pad,
+            ));
+            b.close();
+        });
+        frame.fill(&area, area_color);
+
+        let line = canvas::Path::new(|b| {
+            b.move_to(cosmic::iced::Point::new(
+                x_at(available[0].0),
+                y_at(available[0].1),
+            ));
+            for (index, value) in available.iter().skip(1) {
+                b.line_to(cosmic::iced::Point::new(x_at(*index), y_at(*value)));
+            }
+        });
+        frame.stroke(
+            &line,
+            canvas::Stroke::default().with_width(2.0).with_color(accent),
+        );
+
+        vec![frame.into_geometry()]
+    }
+}
+
+struct PanelBatteryIcon {
+    percentage: f32,
+    charging: bool,
+}
+
+impl canvas::Program<Message, cosmic::Theme> for PanelBatteryIcon {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &cosmic::iced::Renderer,
+        theme: &Theme,
+        bounds: cosmic::iced::Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let width = bounds.width;
+        let height = bounds.height;
+        let percentage = self.percentage.clamp(0.0, 1.0);
+        let fill_color = battery_fill_color(theme, percentage);
+        let outline = battery_outline_color(theme);
+
+        let body = cosmic::iced::Rectangle::new(
+            cosmic::iced::Point::new(0.5, 0.5),
+            cosmic::iced::Size::new(width - 5.0, height - 1.0),
+        );
+        let body_path = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                body.position(),
+                body.size(),
+                cosmic::iced::border::Radius::from(2.0),
+            )
+        });
+
+        let fill_width = (body.width - 3.0) * percentage;
+        if fill_width > 0.0 {
+            let fill = canvas::Path::new(|b| {
+                b.rounded_rectangle(
+                    cosmic::iced::Point::new(2.0, 2.0),
+                    cosmic::iced::Size::new(fill_width, body.height - 3.0),
+                    cosmic::iced::border::Radius::from(1.0_f32.min(fill_width / 2.0)),
+                )
+            });
+            frame.fill(&fill, fill_color);
+        }
+        frame.stroke(
+            &body_path,
+            canvas::Stroke::default().with_width(1.0).with_color(outline),
+        );
+
+        let nub = canvas::Path::new(|b| {
+            b.rounded_rectangle(
+                cosmic::iced::Point::new(width - 4.0, height / 2.0 - 2.0),
+                cosmic::iced::Size::new(2.5, 4.0),
+                cosmic::iced::border::Radius::from(1.0),
+            )
+        });
+        frame.fill(&nub, outline);
+
+        if self.charging {
+            let bolt = canvas::Path::new(|b| {
+                b.move_to(cosmic::iced::Point::new(10.0, 3.0));
+                b.line_to(cosmic::iced::Point::new(7.5, 8.0));
+                b.line_to(cosmic::iced::Point::new(10.0, 8.0));
+                b.line_to(cosmic::iced::Point::new(9.5, 11.5));
+                b.line_to(cosmic::iced::Point::new(12.5, 7.0));
+                b.line_to(cosmic::iced::Point::new(10.0, 7.0));
+                b.close();
+            });
+            frame.fill(&bolt, battery_on_color(theme, percentage));
         }
 
         vec![frame.into_geometry()]
@@ -481,17 +1146,7 @@ impl cosmic::Application for PowerMonitor {
         app.sync_display_modes();
         app.apply_poll_interval();
 
-        (
-            app,
-            Task::perform(battery::poll_batteries(), |result| match result {
-                Ok(data) => Message::Update(data),
-                Err(e) => {
-                    log::debug!("initial battery poll failed: {e}");
-                    Message::NoBattery
-                }
-            })
-            .map(Action::App),
-        )
+        (app, poll_task())
     }
 
     fn on_close_requested(&self, id: cosmic::iced::window::Id) -> Option<Message> {
@@ -523,7 +1178,7 @@ impl cosmic::Application for PowerMonitor {
                         .max_height(1080.0);
 
                     self.apply_poll_interval();
-                    get_popup(popup_settings)
+                    Task::batch([get_popup(popup_settings), poll_task()])
                 };
             }
             Message::PopupClosed(popup_id) => {
@@ -540,7 +1195,8 @@ impl cosmic::Application for PowerMonitor {
                     data.energy_rate
                 );
                 self.watts = data.energy_rate;
-                self.display_watts.go_mut(data.energy_rate as f32, Instant::now());
+                let now = Instant::now();
+                self.display_watts.go_mut(data.energy_rate as f32, now);
                 self.percentage = data.percentage;
                 self.status = data.status;
                 self.time_to_empty = data.time_to_empty;
@@ -551,6 +1207,7 @@ impl cosmic::Application for PowerMonitor {
                 self.cycle_count = data.cycle_count;
                 self.temperature = data.temperature;
                 self.no_battery = false;
+                self.history.push(now, data.energy_rate);
                 self.batteries = data.batteries;
             }
             Message::NoBattery => {
@@ -564,6 +1221,7 @@ impl cosmic::Application for PowerMonitor {
                 self.energy_full_design = None;
                 self.cycle_count = None;
                 self.temperature = None;
+                self.history.clear();
                 self.batteries = Vec::new();
             }
             Message::DisplayModeSelected(entity) => {
@@ -591,7 +1249,23 @@ impl cosmic::Application for PowerMonitor {
 
     fn view(&self) -> Element<'_, Self::Message> {
         let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
-        let content = text::body(self.format_panel_string(animated));
+        let label = text::body(self.format_panel_string(animated));
+
+        let content: Element<Message> = if self.core.applet.is_horizontal() && !self.no_battery {
+            let glyph = canvas::Canvas::<PanelBatteryIcon, Message, Theme>::new(PanelBatteryIcon {
+                percentage: (self.percentage / 100.0) as f32,
+                charging: self.status == "Charging",
+            })
+            .width(Length::Fixed(22.0))
+            .height(Length::Fixed(14.0));
+
+            row![glyph, label]
+                .spacing(6)
+                .align_y(cosmic::iced::core::Alignment::Center)
+                .into()
+        } else {
+            label.into()
+        };
 
         // AppletIcon draws no background at rest, just a hover highlight, and takes
         // its text colour from the panel, so the applet sits among the other panel
@@ -605,162 +1279,10 @@ impl cosmic::Application for PowerMonitor {
     }
 
     fn view_window(&self, _id: Id) -> Element<'_, Self::Message> {
-        let mut content: Vec<Element<Message>> = Vec::new();
-
-        content.push(
-            container(
-                segmented_control::horizontal(&self.display_modes)
-                    .on_activate(Message::DisplayModeSelected),
-            )
-            .padding([12, 12, 8, 12])
-            .into(),
-        );
-        content.push(divider::horizontal::default().into());
-
-        if self.no_battery {
-            content.push(
-                container(text::body(fl!("no-battery"))).padding(12).into(),
-            );
-            return self.core.applet.popup_container(column::with_children(content)).into();
-        }
-
-        let battery_icon = canvas::Canvas::<BatteryIcon, Message, Theme>::new(BatteryIcon {
-            percentage: (self.percentage / 100.0) as f32,
-            charging: self.status == "Charging",
-        })
-        .width(Length::Fixed(48.0))
-        .height(Length::Fixed(32.0));
-
-        // The status line carries the live wattage too, so the reading is visible
-        // without opening a section for it. A battery idling at a charge
-        // threshold reports 0W indefinitely, so only show it when there is a
-        // real draw.
-        let status_line = match self.watts > 0.0 {
-            true => format!(
-                "{} \u{b7} {}",
-                localize_status(&self.status),
-                Self::format_watts_labeled(self.watts)
-            ),
-            false => localize_status(&self.status),
-        };
-
-        // Everything below the divider shares one horizontal gutter, so the
-        // header card and the section cards line up on both edges.
-        let mut body: Vec<Element<Message>> = Vec::new();
-
-        body.push(
-            container(
-                column![
-                    row![
-                        battery_icon,
-                        column![
-                            text::title1(format!("{:.0}%", self.percentage)),
-                            text::caption(status_line),
-                        ]
-                        .spacing(0),
-                    ]
-                    .spacing(12)
-                    .align_y(cosmic::iced::core::Alignment::Center),
-                    canvas::Canvas::<BatteryBar, Message, Theme>::new(BatteryBar {
-                        percentage: (self.percentage / 100.0) as f32,
-                    })
-                    .width(Length::Fill)
-                    .height(Length::Fixed(4.0)),
-                ]
-                .spacing(10),
-            )
-            .padding([12, 12, 12, 12])
-            .class(cosmic::theme::Container::Card)
-            .into(),
-        );
-
-        if self.batteries.len() > 1 {
-            for b in &self.batteries {
-                let watts_str = if b.energy_rate > 0.0 {
-                    let sign = if b.status == "Charging" { "+" } else { "-" };
-                    format!("  {}{}", sign, Self::format_watts(b.energy_rate))
-                } else {
-                    String::new()
-                };
-                body.push(
-                    container(
-                        text::body(format!(
-                            "{}  {:.0}%  {}{}",
-                            b.name,
-                            b.percentage,
-                            localize_status(&b.status),
-                            watts_str
-                        )),
-                    )
-                    .padding([4, 12])
-                    .into(),
-                );
-            }
-        }
-
-        // Detail rows are grouped into BATTERY / HEALTH cards. A section with
-        // nothing to show is skipped whole, so no empty card is left behind.
-        let mut sections: Vec<Element<Message>> = Vec::new();
-
-        // BATTERY
-        let mut battery_rows: Vec<Element<Message>> = vec![
-            Self::detail_row(fl!("energy-remaining"), format!("{:.1} Wh", self.energy)),
-            Self::detail_row(fl!("full-capacity"), format!("{:.1} Wh", self.energy_full)),
-        ];
-        if let Some(design) = self
-            .energy_full_design
-            .filter(|design| *design > 0.0)
-        {
-            battery_rows.push(Self::detail_row(
-                fl!("design-capacity"),
-                format!("{:.1} Wh", design),
-            ));
-        }
-        if self.status == "Discharging" && self.time_to_empty > 0 {
-            battery_rows.push(Self::detail_row(
-                fl!("time-to-empty"),
-                Self::format_time(self.time_to_empty),
-            ));
-        }
-        if self.status == "Charging" && self.time_to_full > 0 {
-            battery_rows.push(Self::detail_row(
-                fl!("time-to-full"),
-                Self::format_time(self.time_to_full),
-            ));
-        }
-        Self::push_section(&mut sections, fl!("section-battery"), battery_rows);
-
-        // HEALTH. Every row is optional, so the section only appears when at
-        // least one attribute was actually readable.
-        let mut health_rows: Vec<Element<Message>> = Vec::new();
-        if let Some(health) = self.health_percentage() {
-            health_rows.push(Self::detail_row(
-                fl!("battery-health"),
-                format!("{:.0}%", health),
-            ));
-        }
-        if let Some(temp) = self.temperature {
-            health_rows.push(Self::detail_row(
-                fl!("temperature"),
-                format!("{}{}", temp, fl!("degrees")),
-            ));
-        }
-        if let Some(cycles) = self.cycle_count {
-            health_rows.push(Self::detail_row(fl!("cycle-count"), format!("{cycles}")));
-        }
-        if !health_rows.is_empty() {
-            Self::push_section(&mut sections, fl!("section-health"), health_rows);
-        }
-
-        body.push(container(column::with_children(sections).spacing(8)).into());
-
-        content.push(
-            container(column::with_children(body).spacing(8))
-                .padding([0, 12, 12, 12])
-                .into(),
-        );
-
-        self.core.applet.popup_container(column::with_children(content)).into()
+        self.core
+            .applet
+            .popup_container(column::with_children(self.popup_body()))
+            .into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -803,6 +1325,8 @@ impl cosmic::Application for PowerMonitor {
 
 #[cfg(test)]
 mod tests {
+    use super::{PowerHistory, PowerMonitor, HISTORY_WINDOW};
+    use std::time::{Duration, Instant};
 
     /// Builds the health inputs directly so the ratio can be checked against
     /// the values real hardware reports.
@@ -840,5 +1364,70 @@ mod tests {
     #[test]
     fn health_is_none_on_zero_full_capacity() {
         assert_eq!(health_for(0.0, Some(49.815)), None);
+    }
+
+    #[test]
+    fn temperature_keeps_tenths() {
+        let formatted = PowerMonitor::format_temperature(30.5);
+        assert!(formatted.starts_with("30.5"), "got {formatted}");
+        assert!(formatted.ends_with("°C"), "got {formatted}");
+    }
+
+    #[test]
+    fn history_discards_samples_older_than_window() {
+        let now = Instant::now();
+        let mut history = PowerHistory::default();
+        history.push(now - HISTORY_WINDOW - Duration::from_secs(1), 5.0);
+        history.push(now, 7.0);
+
+        assert_eq!(history.span(now), Duration::ZERO);
+        assert!(history.points(now, 4).is_empty());
+    }
+
+    #[test]
+    fn history_waits_for_minimum_span() {
+        let now = Instant::now();
+        let mut history = PowerHistory::default();
+        history.push(now - Duration::from_secs(10), 5.0);
+        history.push(now, 7.0);
+
+        assert!(history.points(now, 4).is_empty());
+    }
+
+    #[test]
+    fn history_resamples_real_samples_and_keeps_empty_buckets_empty() {
+        let now = Instant::now();
+        let mut history = PowerHistory::default();
+        history.push(now - Duration::from_secs(120), 10.0);
+        history.push(now - Duration::from_secs(60), 20.0);
+        history.push(now, 30.0);
+
+        let points = history.points(now, 4);
+        assert_eq!(points.len(), 4);
+        assert_eq!(points.iter().flatten().count(), 3);
+        assert!(points.iter().any(Option::is_none));
+        assert_eq!(points[0], Some(10.0));
+        assert_eq!(points[2], Some(20.0));
+        assert_eq!(points[3], Some(30.0));
+        assert_eq!(history.span(now), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn history_stats_use_raw_samples_for_peak() {
+        let now = Instant::now();
+        let mut history = PowerHistory::default();
+        history.push(now - Duration::from_secs(300), 10.0);
+        history.push(now - Duration::from_secs(290), 40.0);
+        history.push(now - Duration::from_secs(200), 20.0);
+        history.push(now - Duration::from_secs(100), 5.0);
+
+        let points = history.points(now, 4);
+        assert_eq!(points[0], Some(25.0));
+        assert_eq!(points[1], Some(20.0));
+        assert_eq!(points[2], Some(5.0));
+
+        let (avg, peak) = history.stats(now).unwrap();
+        assert!((avg - 18.75).abs() < 0.0001, "got {avg}");
+        assert_eq!(peak, 40.0);
     }
 }

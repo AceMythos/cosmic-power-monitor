@@ -23,8 +23,8 @@ impl PanelDisplay {
 
     pub fn label(&self) -> String {
         match self {
-            Self::Percentage => "%".to_string(),
-            Self::Power => "W".to_string(),
+            Self::Percentage => fl!("mode-percentage"),
+            Self::Power => fl!("mode-power"),
             Self::Both => fl!("mode-both"),
         }
     }

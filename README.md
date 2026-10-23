@@ -13,10 +13,12 @@ If this saves you guesswork, star the repo.
 |----------|-------------|
 | ![Charging](screenshots/charge.png) | ![Discharging](screenshots/discharge.png) |
 
+![Panel](screenshots/panel.png)
+
 ## What it does
 
-- Panel shows text only: `-12.7W(2h 10m)` discharging, `+26.5W(1h 36m)` charging, `✓ Full` when fully charged
-- Popup displays percentage, status, charge/discharge rate, capacity, time remaining
+- Panel shows a theme-aware battery glyph and watts: `-12.7W(2h 10m)` discharging, `+26.5W(1h 36m)` charging, `✓ Full` when fully charged
+- Popup displays percentage, status, charge/discharge rate, a 30-minute power trend, capacity, per-battery bars, health, and time remaining
 - Polls `/sys/class/power_supply` 4 times per second
 
 ## Install

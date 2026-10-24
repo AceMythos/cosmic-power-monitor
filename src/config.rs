@@ -30,8 +30,28 @@ impl PanelDisplay {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, CosmicConfigEntry)]
+#[derive(Clone, Debug, PartialEq, CosmicConfigEntry)]
 #[version = 1]
 pub struct PowerMonitorConfig {
     pub panel_display: PanelDisplay,
+    pub show_panel_icon: bool,
+}
+
+impl Default for PowerMonitorConfig {
+    fn default() -> Self {
+        Self {
+            panel_display: PanelDisplay::default(),
+            show_panel_icon: true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_icon_defaults_to_visible() {
+        assert!(PowerMonitorConfig::default().show_panel_icon);
+    }
 }

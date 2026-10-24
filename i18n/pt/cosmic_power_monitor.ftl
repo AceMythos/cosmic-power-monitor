@@ -26,6 +26,7 @@ hours = h
 mode-percentage = Porcentagem
 mode-power = Watts
 panel-display = Exibição do painel
+panel-icon = Ícone da bateria
 trend-title = Potência da bateria
 trend-window = 30 min
 trend-now = agora

@@ -7,6 +7,7 @@ use cosmic::iced::window::Id;
 use cosmic::iced::{Length, Limits, Subscription};
 use cosmic::widget::{
     button, canvas, column, container, divider, row, segmented_button, segmented_control, text,
+    toggler,
 };
 use cosmic::{Action, Element, Task, Theme};
 use cosmic::iced::Color;
@@ -200,6 +201,7 @@ pub enum Message {
     Update(battery::BatteryData),
     NoBattery,
     DisplayModeSelected(segmented_button::Entity),
+    PanelIconToggled(bool),
     ConfigUpdated(PowerMonitorConfig),
 }
 
@@ -318,11 +320,31 @@ impl PowerMonitor {
     }
 
     fn panel_footer(&self) -> Element<'_, Message> {
+        let header: Element<Message> = if self.core.applet.is_horizontal() {
+            row![
+                text::caption(fl!("panel-display")),
+                container(
+                    toggler(self.config.show_panel_icon)
+                        .label(fl!("panel-icon"))
+                        .on_toggle(Message::PanelIconToggled)
+                        .size(20.0)
+                        .text_size(12.0)
+                        .spacing(6.0),
+                )
+                .width(Length::Fill)
+                .align_x(cosmic::iced::core::Alignment::End),
+            ]
+            .align_y(cosmic::iced::core::Alignment::Center)
+            .into()
+        } else {
+            text::caption(fl!("panel-display")).into()
+        };
+
         column![
             divider::horizontal::default(),
             container(
                 column![
-                    text::caption(fl!("panel-display")),
+                    header,
                     segmented_control::horizontal(&self.display_modes)
                         .on_activate(Message::DisplayModeSelected),
                 ]
@@ -1229,13 +1251,24 @@ impl cosmic::Application for PowerMonitor {
                     return Task::none();
                 };
                 self.display_modes.activate(entity);
-                self.config.panel_display = mode;
-                self.apply_poll_interval();
 
                 if let Some(handler) = &self.config_handler {
                     if let Err(e) = self.config.set_panel_display(handler, mode) {
                         log::warn!("failed to persist panel_display: {e}");
                     }
+                } else {
+                    self.config.panel_display = mode;
+                }
+
+                self.apply_poll_interval();
+            }
+            Message::PanelIconToggled(enabled) => {
+                if let Some(handler) = &self.config_handler {
+                    if let Err(e) = self.config.set_show_panel_icon(handler, enabled) {
+                        log::warn!("failed to persist show_panel_icon: {e}");
+                    }
+                } else {
+                    self.config.show_panel_icon = enabled;
                 }
             }
             Message::ConfigUpdated(config) => {
@@ -1251,7 +1284,10 @@ impl cosmic::Application for PowerMonitor {
         let animated = self.display_watts.interpolate_with(|v| v, Instant::now()) as f64;
         let label = text::body(self.format_panel_string(animated));
 
-        let content: Element<Message> = if self.core.applet.is_horizontal() && !self.no_battery {
+        let content: Element<Message> = if self.core.applet.is_horizontal()
+            && !self.no_battery
+            && self.config.show_panel_icon
+        {
             let glyph = canvas::Canvas::<PanelBatteryIcon, Message, Theme>::new(PanelBatteryIcon {
                 percentage: (self.percentage / 100.0) as f32,
                 charging: self.status == "Charging",

@@ -63,6 +63,13 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.2.0" date="2026-10-30">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.2.0</url>
+      <description>
+        <p>New 2.0 popup with a 30-minute power trend and expanded battery details, including per-battery bars, health, temperature, cycle count, and capacity.</p>
+        <p>Panel can show percentage, power, or both, with an optional battery glyph. Improved detection of capacity-only and phantom battery devices, added Polish localization, and reduced libcosmic log spam.</p>
+      </description>
+    </release>
     <release version="0.1.10" date="2026-10-21">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.1.10</url>
       <description>

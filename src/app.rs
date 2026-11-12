@@ -1305,11 +1305,21 @@ impl cosmic::Application for PowerMonitor {
 
         // AppletIcon draws no background at rest, just a hover highlight, and takes
         // its text colour from the panel, so the applet sits among the other panel
-        // icons instead of on a grey pill.
-        let btn = button::custom(content)
+        // icons instead of on a grey pill. Sizing comes from the panel, like the
+        // desktop's own text applets, so the highlight fills the panel row.
+        let (_, height) = self.core.applet.suggested_size(true);
+        let (major, minor) = self.core.applet.suggested_padding(true);
+        let (horizontal, vertical) = if self.core.applet.is_horizontal() {
+            (major, minor)
+        } else {
+            (minor, major)
+        };
+        let content_height = f32::from(height + 2 * vertical);
+
+        let btn = button::custom(container(content).center_y(Length::Fixed(content_height)))
             .class(cosmic::theme::Button::AppletIcon)
             .on_press_down(Message::TogglePopup)
-            .padding([4, 8]);
+            .padding([0, horizontal]);
 
         self.core.applet.autosize_window(btn).into()
     }

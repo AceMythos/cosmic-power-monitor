@@ -50,6 +50,7 @@
   </screenshots>
   <url type="homepage">https://github.com/AceMythos/cosmic-power-monitor</url>
   <url type="bugtracker">https://github.com/AceMythos/cosmic-power-monitor/issues</url>
+  <developer_name>AceMythos</developer_name>
   <developer id="io.github.acemythos">
     <name>AceMythos</name>
   </developer>
@@ -63,6 +64,13 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.2.1" date="2026-11-13">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.2.1</url>
+      <description>
+        <p>Added proper theme signals to pass through D-Bus in Flatpak sandbox mode.</p>
+        <p>Show the developer name in the COSMIC Store listing.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-30">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.2.0</url>
       <description>

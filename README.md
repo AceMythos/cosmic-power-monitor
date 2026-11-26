@@ -54,7 +54,7 @@ Then add **Power Monitor** to your panel via COSMIC Settings -> Desktop -> Panel
 
 ## How the reading works
 
-The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It includes every device the kernel reports as `type=Battery` that exposes a battery reading (`capacity`, `energy_now`, or `charge_now`), and sums their energy and power, so peripheral batteries count toward the total. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
+The applet reads `power_now` from the kernel power-supply interface in `/sys/class/power_supply/`. It aggregates every **system** battery the kernel reports as `type=Battery` that exposes a battery reading (`capacity`, `energy_now`, or `charge_now`), summing their energy and power. Peripheral batteries (stylus, headset, gamepad) are skipped: drivers mark them with `scope=Device` or name them `hid-<id>-battery-<n>`, and counting a 0% peripheral would drag the panel reading down. If a machine reports only peripheral batteries, the applet falls back to those instead of reporting nothing. If `power_now` is unavailable, it derives watts from `current_now * voltage_now`.
 
 The number is battery charge/discharge power, not total system draw. The label shows `—` when no rate is available, `✓ Full` when fully charged, and `Stopped` when the battery reports no power while charging or not charging. The applet polls every 250ms.
 

@@ -107,7 +107,11 @@ fn read_battery_info(path: &Path) -> Result<BatteryInfo, String> {
 }
 
 pub async fn poll_batteries() -> Result<BatteryData, String> {
-    let paths = find_batteries()?;
+    poll_batteries_in(Path::new(POWER_SUPPLY_DIR))
+}
+
+fn poll_batteries_in(dir: &Path) -> Result<BatteryData, String> {
+    let paths = collect_batteries(dir)?;
     let mut infos = Vec::with_capacity(paths.len());
 
     for path in &paths {
@@ -156,9 +160,10 @@ pub async fn poll_batteries() -> Result<BatteryData, String> {
     })
 }
 
-fn find_batteries() -> Result<Vec<PathBuf>, String> {
-    let entries = fs::read_dir(POWER_SUPPLY_DIR).map_err(|e| e.to_string())?;
-    let mut batteries = Vec::new();
+fn collect_batteries(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
+    let mut system = Vec::new();
+    let mut peripheral = Vec::new();
 
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -180,16 +185,52 @@ fn find_batteries() -> Result<Vec<PathBuf>, String> {
             continue;
         }
 
+        if is_peripheral_battery(&path) {
+            debug!("skipping peripheral battery: {}", path.display());
+            peripheral.push(path);
+            continue;
+        }
+
         debug!("battery found: {}", path.display());
-        batteries.push(path);
+        system.push(path);
     }
 
-    if batteries.is_empty() {
-        error!("no battery detected under {}", POWER_SUPPLY_DIR);
-        return Err("No battery detected".to_string());
+    // read_dir order is not guaranteed, and the aggregate picks the first entry
+    // for per-device values like cycle count, so sort for a stable order.
+    system.sort();
+    peripheral.sort();
+
+    if !system.is_empty() {
+        return Ok(system);
     }
 
-    Ok(batteries)
+    // A machine whose only battery is a device battery (tablet, handheld) still
+    // has to report something, so peripherals stand in when nothing else exists.
+    if !peripheral.is_empty() {
+        warn!(
+            "no system battery under {}, falling back to peripheral batteries",
+            dir.display()
+        );
+        return Ok(peripheral);
+    }
+
+    error!("no battery detected under {}", dir.display());
+    Err("No battery detected".to_string())
+}
+
+/// A `type=Battery` supply is not necessarily the machine's battery. Two
+/// independent signals mark a peripheral: the HID, Wacom, and UCSI drivers set
+/// `scope` to `Device`, and HID battery nodes are always named
+/// `hid-<id>-battery-<n>`. Checking either one keeps the filter working on
+/// kernels that do not expose `scope` at all, as most ACPI batteries do not.
+fn is_peripheral_battery(path: &Path) -> bool {
+    if read_trimmed(path, "scope").unwrap_or_default() == "Device" {
+        return true;
+    }
+
+    path.file_name()
+        .map(|name| name.to_string_lossy().starts_with("hid-"))
+        .unwrap_or(false)
 }
 
 /// A power supply tagged `Battery` is not necessarily a battery: the Apple MFi
@@ -465,5 +506,146 @@ mod tests {
 
             fs::remove_dir_all(&dir).unwrap();
         }
+    }
+
+    fn write_supply(dir: &Path, name: &str, attrs: &[(&str, &str)]) -> PathBuf {
+        let path = dir.join(name);
+        fs::create_dir_all(&path).unwrap();
+        for (attr, value) in attrs {
+            fs::write(path.join(attr), value).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn poll_ignores_peripheral_battery_in_totals() {
+        // Issue #21: BAT0 at 24% plus a stylus battery at 0% used to average to
+        // 12%. The peripheral must not reach any total.
+        let dir = temp_supply("issue-21");
+        write_supply(
+            &dir,
+            "BAT0",
+            &[
+                ("type", "Battery"),
+                ("status", "Discharging"),
+                ("capacity", "24"),
+                ("energy_now", "15500000"),
+                ("energy_full", "65600000"),
+                ("energy_full_design", "75400000"),
+                ("power_now", "10600000"),
+                ("cycle_count", "234"),
+            ],
+        );
+        write_supply(
+            &dir,
+            "hid-0018:04F3:4307.0001-battery-7",
+            &[
+                ("type", "Battery"),
+                ("status", "Unknown"),
+                ("capacity", "0"),
+                ("scope", "Device"),
+            ],
+        );
+
+        let data = poll_batteries_in(&dir).unwrap();
+
+        assert_eq!(data.batteries.len(), 1, "peripheral joined the totals");
+        assert_eq!(data.batteries[0].name, "BAT0");
+        assert_eq!(data.status, "Discharging");
+        assert!((data.percentage - 100.0 * 15.5 / 65.6).abs() < 0.0001);
+        assert!((data.energy - 15.5).abs() < 0.0001);
+        assert!((data.energy_full - 65.6).abs() < 0.0001);
+        assert!(data.time_to_empty > 0, "time to empty needs a real status");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_prefers_system_battery_over_peripheral() {
+        let dir = temp_supply("prefer-system");
+        let bat0 = write_supply(
+            &dir,
+            "BAT0",
+            &[("type", "Battery"), ("capacity", "80"), ("scope", "System")],
+        );
+        write_supply(
+            &dir,
+            "hid-0018:04F3:4307.0001-battery-7",
+            &[("type", "Battery"), ("capacity", "0"), ("scope", "Device")],
+        );
+
+        assert_eq!(collect_batteries(&dir).unwrap(), vec![bat0]);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_falls_back_when_only_peripheral_battery_exists() {
+        let dir = temp_supply("peripheral-only");
+        let hid = write_supply(
+            &dir,
+            "hid-0018:04F3:4307.0001-battery-7",
+            &[("type", "Battery"), ("capacity", "55"), ("scope", "Device")],
+        );
+
+        assert_eq!(collect_batteries(&dir).unwrap(), vec![hid]);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_accepts_system_battery_without_scope_file() {
+        // Most ACPI batteries expose no `scope` attribute at all.
+        let dir = temp_supply("no-scope");
+        let bat0 = write_supply(&dir, "BAT0", &[("type", "Battery"), ("capacity", "80")]);
+
+        assert_eq!(collect_batteries(&dir).unwrap(), vec![bat0]);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_rejects_hid_battery_without_scope_file() {
+        // The name signal has to work even when `scope` is missing.
+        let dir = temp_supply("hid-no-scope");
+        let bat0 = write_supply(&dir, "BAT0", &[("type", "Battery"), ("capacity", "80")]);
+        write_supply(
+            &dir,
+            "hid-0018:04F3:4307.0001-battery-7",
+            &[("type", "Battery"), ("capacity", "0")],
+        );
+
+        assert_eq!(collect_batteries(&dir).unwrap(), vec![bat0]);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_ignores_non_battery_supplies() {
+        let dir = temp_supply("non-battery");
+        write_supply(&dir, "ACAD", &[("type", "Mains"), ("online", "1")]);
+        write_supply(
+            &dir,
+            "ucsi-source-psy-USBC000:001",
+            &[("type", "USB"), ("capacity", "90"), ("scope", "System")],
+        );
+
+        assert!(collect_batteries(&dir).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_ignores_battery_like_supply_without_readings() {
+        let dir = temp_supply("no-readings");
+        write_supply(
+            &dir,
+            "apple_mfi_fastcharge_1-2",
+            &[("type", "Battery"), ("charge_type", "Trickle")],
+        );
+
+        assert!(collect_batteries(&dir).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -64,6 +64,13 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="0.2.2" date="2026-11-27">
+      <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.2.2</url>
+      <description>
+        <p>Ignore peripheral batteries such as stylus, headset, and gamepad batteries when calculating the panel reading, so a 0% accessory no longer drags the percentage down or hides the real charging status.</p>
+        <p>System batteries are still combined on dual battery laptops.</p>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-11-13">
       <url type="details">https://github.com/AceMythos/cosmic-power-monitor/releases/tag/v0.2.1</url>
       <description>
